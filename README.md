@@ -1,2 +1,2 @@
-# Warewolf-Game
-Warewolf game using paxos algorithm
+# Werewolf-Game
+Werewolf game using paxos algorithm.
