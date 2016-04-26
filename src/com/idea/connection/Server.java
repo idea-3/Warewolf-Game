@@ -36,8 +36,6 @@ public class Server {
      */
     private class ClientController extends Thread {
         private int clientId;
-        private JSONObject request;
-        private JSONObject response;
         private BufferedReader in;
         private PrintWriter out;
         private Socket clientSocket;
@@ -58,6 +56,7 @@ public class Server {
          * Menjalankan controller client
          */
         public void run() {
+            JSONObject request, response;
             String clientString;
             StringBuilder stringBuilder;
 
@@ -67,7 +66,7 @@ public class Server {
                     stringBuilder.append(clientString);
                     request = new JSONObject(stringBuilder.toString());
                     System.out.println("Request from client: " + request);
-                    checkMethod(request.get("method").toString());
+                    response = getResponse(request);
                     System.out.println("Response to client: " + response);
                     out.println(response.toString());
                     out.flush();
@@ -89,25 +88,37 @@ public class Server {
         }
 
         /**
-         * Menentukan response server berdasarkan method dari request client
-         * @param method method dari request client
+         * Menentukan response server berdasarkan request client
+         * @param request request client
          */
-        private void checkMethod(String method) throws JSONException {
+        private JSONObject getResponse(JSONObject request) throws JSONException {
+            JSONObject response;
+            String method = request.getString("method");
+
             switch(method) {
                 case "join":
-                    respondJoinGame();
+                    response = respondJoinGame(request);
+                    break;
+                default:
+                    response = new JSONObject();
                     break;
             }
+
+            return response;
         }
 
         /**
          * Menyusun JSON untuk merespon request join game dari client
          */
-        private void respondJoinGame() throws JSONException {
+        private JSONObject respondJoinGame(JSONObject request) throws JSONException {
+            JSONObject response;
+
             username = request.get("username").toString();
             response = new JSONObject();
             response.put("status", "ok");
             response.put("player_id", clientId);
+
+            return response;
         }
     }
 
@@ -132,7 +143,7 @@ public class Server {
         System.out.println("Server IP host name : " + hostName);
         while (true) {
             Socket clientSocket = serverSocket.accept();
-            System.out.println("Just connected to " + clientSocket.getRemoteSocketAddress() + " " + clientSocket.getPort());
+            System.out.println("Just connected to " + clientSocket.getRemoteSocketAddress());
             controlClient(clientSocket);
         }
     }

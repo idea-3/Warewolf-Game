@@ -14,8 +14,6 @@ import java.util.Scanner;
  * Created by angelynz95 on 25-Apr-16.
  */
 public class Client {
-    private JSONObject request;
-    private JSONObject response;
     private Socket clientSocket;
     private BufferedReader in;
     private PrintWriter out;
@@ -47,7 +45,7 @@ public class Client {
     /**
      * Mengirim request ke server
      */
-    private void sendToServer() {
+    private void sendToServer(JSONObject request) {
         System.out.println("Request to server: " + request);
         out.println(request.toString());
         out.flush();
@@ -56,7 +54,8 @@ public class Client {
     /**
      * Menerima response dari server
      */
-    private void receiveFromServer() throws JSONException, IOException {
+    private JSONObject receiveFromServer() throws JSONException, IOException {
+        JSONObject response;
         String serverString;
         StringBuilder stringBuilder = new StringBuilder();
 
@@ -64,6 +63,8 @@ public class Client {
         stringBuilder.append(serverString);
         response = new JSONObject(stringBuilder.toString());
         System.out.println("Response from server: " + response);
+
+        return response;
     }
 
     /**
@@ -72,8 +73,8 @@ public class Client {
     private void joinGame() throws JSONException, IOException {
         System.out.print("Username: ");
         String username = scan.nextLine();
-        requestJoinGame(username);
-        sendToServer();
+        JSONObject request = requestJoinGame(username);
+        sendToServer(request);
         receiveFromServer();
     }
 
@@ -81,12 +82,14 @@ public class Client {
      * Menyusun JSON untuk request join game ke server
      * @param username username client
      */
-    private void requestJoinGame(String username) throws JSONException {
-        request = new JSONObject();
+    private JSONObject requestJoinGame(String username) throws JSONException {
+        JSONObject request = new JSONObject();
         request.put("method", "join");
         request.put("username", username);
-        request.put("udp_address", clientSocket.getInetAddress());
-        request.put("udp_port", clientSocket.getPort());
+        request.put("udp_address", clientSocket.getLocalAddress().getHostAddress());
+        request.put("udp_port", clientSocket.getLocalPort());
+
+        return request;
     }
 
     public static void main(String[] args) throws IOException, JSONException {
