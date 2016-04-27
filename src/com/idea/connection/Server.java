@@ -1,5 +1,6 @@
 package com.idea.connection;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -17,7 +18,6 @@ import java.util.*;
  */
 public class Server {
     private ArrayList<ClientController> clients;
-    private InetAddress ip;
     private ServerSocket serverSocket;
     public static final HashMap<String, List<String>> okResponseKeys = initializeOkResponseKeys();
     public static final List<String> failResponseKeys = Arrays.asList("status", "description");
@@ -32,7 +32,6 @@ public class Server {
      */
     public Server(int port) throws IOException {
         clients = new ArrayList<>();
-        ip = InetAddress.getLocalHost();
         serverSocket = new ServerSocket(port);
     }
 
@@ -83,32 +82,35 @@ public class Server {
      */
     private static HashMap initializeDescriptionResponseValues() {
         HashMap<String, String> descriptionResponseValues = new HashMap<>();
-        descriptionResponseValues.put("join game fail user exists", "user exists");
-        descriptionResponseValues.put("join game fail game running", "“please wait, game is currently running");
-        descriptionResponseValues.put("join game error", "wrong request");
-        descriptionResponseValues.put("leave game fail", "you can not leave the game right now");
-        descriptionResponseValues.put("leave game error", "wrong request");
-        descriptionResponseValues.put("ready up ok", "waiting for other player to start");
-        descriptionResponseValues.put("ready up fail", "ready up fail");
-        descriptionResponseValues.put("ready up error", "ready up error");
-        descriptionResponseValues.put("list client fail", "client list can not be received");
-        descriptionResponseValues.put("list client error", "client list error");
-        descriptionResponseValues.put("info werewolf killed ok", "");
-        descriptionResponseValues.put("info werewolf killed fail", "");
-        descriptionResponseValues.put("info werewolf killed error", "");
-        descriptionResponseValues.put("kill civillian vote ok", "");
-        descriptionResponseValues.put("kill civillian vote fail", "");
-        descriptionResponseValues.put("kill civillian vote error", "");
-        descriptionResponseValues.put("info civillian killed ok", "");
-        descriptionResponseValues.put("info civillian killed fail", "");
-        descriptionResponseValues.put("info civillian killed error", "");
-        descriptionResponseValues.put("start game fail", "");
-        descriptionResponseValues.put("start game error", "");
-        descriptionResponseValues.put("change phase ok", "change phase is success");
-        descriptionResponseValues.put("change phase fail", "");
-        descriptionResponseValues.put("change phase error", "");
-        descriptionResponseValues.put("game over fail", "");
-        descriptionResponseValues.put("game over error", "");
+        descriptionResponseValues.put("join fail user exists", "user exists");
+        descriptionResponseValues.put("join fail game running", "“please wait, game is currently running");
+        descriptionResponseValues.put("join error", "wrong request");
+        descriptionResponseValues.put("leave fail", "you can not leave the game right now");
+        descriptionResponseValues.put("leave error", "wrong request");
+        descriptionResponseValues.put("ready ok", "waiting for other player to start");
+        descriptionResponseValues.put("ready fail", "ready up fail");
+        descriptionResponseValues.put("ready error", "ready up error");
+        descriptionResponseValues.put("client_address fail", "client list can not be received");
+        descriptionResponseValues.put("client_address error", "client list error");
+        descriptionResponseValues.put("vote_result_werewolf ok", "");
+        descriptionResponseValues.put("vote_result ok", "");
+        descriptionResponseValues.put("vote_result_werewolf fail", "");
+        descriptionResponseValues.put("vote_result fail", "");
+        descriptionResponseValues.put("vote_result_werewolf error", "");
+        descriptionResponseValues.put("vote_result error", "");
+        descriptionResponseValues.put("vote_civilian ok", "");
+        descriptionResponseValues.put("vote_civilian fail", "");
+        descriptionResponseValues.put("vote_civilian error", "");
+        descriptionResponseValues.put("vote_result_civilian ok", "");
+        descriptionResponseValues.put("vote_result_werewolf fail", "");
+        descriptionResponseValues.put("vote_result_werewolf error", "");
+        descriptionResponseValues.put("start fail", "");
+        descriptionResponseValues.put("start error", "");
+        descriptionResponseValues.put("change_phase ok", "change phase is success");
+        descriptionResponseValues.put("change_phase fail", "");
+        descriptionResponseValues.put("change_phase error", "");
+        descriptionResponseValues.put("game_over fail", "");
+        descriptionResponseValues.put("game_over error", "");
 
         return descriptionResponseValues;
     }
@@ -122,6 +124,7 @@ public class Server {
         private PrintWriter out;
         private Socket clientSocket;
         private String username;
+        private boolean isAlive;
 
         /**
          * Konstruktor
@@ -174,16 +177,53 @@ public class Server {
          * @param request request client
          */
         private JSONObject getResponse(JSONObject request) throws JSONException {
-            JSONObject response;
             String method = request.getString(methodKey);
+            String status = getStatus();
+            JSONObject response = packResponse(method, status);
 
-            switch(method) {
-                case "join":
-                    response = respondJoinGame(request);
-                    break;
-                default:
-                    response = new JSONObject();
-                    break;
+            return response;
+        }
+
+        private JSONObject packResponse(String method, String status) throws JSONException {
+            JSONObject response = new JSONObject();
+
+            int responseLength;
+            if (status.equals(statusResponseValues.get("ok"))) {
+                responseLength = okResponseKeys.get(method).size();
+                for (int i=0; i<responseLength; i++) {
+                    String key = okResponseKeys.get(method).get(i);
+                    switch (key) {
+                        case "status":
+                            response.put(key, status);
+                            break;
+                        case "description":
+                            response.put(key, getDescription(status));
+                            break;
+                        case "player_id":
+                            response.put(key, clientId);
+                            break;
+                        case "clients":
+                            response.put(key, getClientsInfo());
+                            break;
+                    }
+                }
+            } else {
+                if (status.equals(statusResponseValues.get("fail"))) {
+                    responseLength = failResponseKeys.size();
+                } else {
+                    responseLength = errorResponseKeys.size();
+                }
+                for (int i=0; i<responseLength; i++) {
+                    String key = failResponseKeys.get(i);
+                    switch(key) {
+                        case "status":
+                            response.put(key, status);
+                            break;
+                        case "description":
+                            response.put(key, getDescription(status));
+                            break;
+                    }
+                }
             }
 
             return response;
@@ -228,20 +268,33 @@ public class Server {
             }
         }
 
-
-        /**
-         * Menyusun JSON untuk merespon request join game dari client
-         */
-        private JSONObject respondJoinGame(JSONObject request) throws JSONException {
-            JSONObject response;
-
-            username = request.get("username").toString();
-            response = new JSONObject();
-            response.put("status", "ok");
-            response.put("player_id", clientId);
-
-            return response;
+        private String getStatus() {
+            return "status";
         }
+
+        private String getDescription(String method) {
+            return descriptionResponseValues.get(method + " " + getStatus());
+        }
+
+        private JSONObject getClientInfo() throws JSONException {
+            JSONObject clientInfo = new JSONObject();
+            clientInfo.put("player_id", clientId);
+            clientInfo.put("is_alive", isAlive);
+            clientInfo.put("address", clientSocket.getInetAddress().getHostAddress());
+            clientInfo.put("port", clientSocket.getPort());
+            clientInfo.put("username", username);
+
+            return clientInfo;
+        }
+    }
+
+    public JSONArray getClientsInfo() throws JSONException {
+        JSONArray clientsInfo = new JSONArray();
+        for (int i=0; i<clients.size(); i++) {
+            clientsInfo.put(clients.get(i).getClientInfo());
+        }
+
+        return clientsInfo;
     }
 
     /**
@@ -259,6 +312,7 @@ public class Server {
      * Menjalankan server
      */
     public void run() throws IOException {
+        InetAddress ip = InetAddress.getLocalHost();
         String hostName = ip.getHostName();
 
         System.out.println("Server IP address: " + ip);
