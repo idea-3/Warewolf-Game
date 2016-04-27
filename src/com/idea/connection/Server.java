@@ -10,8 +10,7 @@ import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Scanner;
+import java.util.*;
 
 /**
  * Created by angelynz95 on 25-Apr-16.
@@ -20,6 +19,12 @@ public class Server {
     private ArrayList<ClientController> clients;
     private InetAddress ip;
     private ServerSocket serverSocket;
+    public static final HashMap<String, List<String>> okResponseKeys = initializeOkResponseKeys();
+    public static final List<String> failResponseKeys = Arrays.asList("status", "description");
+    public static final List<String> errorResponseKeys = Arrays.asList("status", "description");
+    public static final String methodKey = "method";
+    public static final HashMap<String, String> statusResponseValues = initializeStatusResponseValues();
+    public static final HashMap<String, String> descriptionResponseValues = initializeDescriptionResponseValues();
 
     /**
      * Konstruktor
@@ -29,6 +34,83 @@ public class Server {
         clients = new ArrayList<>();
         ip = InetAddress.getLocalHost();
         serverSocket = new ServerSocket(port);
+    }
+
+    /**
+     * Menginisialisasi OK response keys dari server ke client
+     * @return map kunci response JSON yang telah diinisialisasi
+     */
+    private static HashMap initializeOkResponseKeys() {
+        HashMap<String, List<String>> okResponseKeys = new HashMap<>();
+        List<String> keys;
+        keys = Arrays.asList("status", "player_id");
+        okResponseKeys.put("join", keys);
+
+        keys = Arrays.asList("status");
+        okResponseKeys.put("leave", keys);
+        okResponseKeys.put("start", keys);
+        okResponseKeys.put("change_phase", keys);
+        okResponseKeys.put("game_over", keys);
+
+        keys = Arrays.asList("status", "description");
+        okResponseKeys.put("ready", keys);
+        okResponseKeys.put("vote_result_werewolf", keys);
+        okResponseKeys.put("vote_result_civilian", keys);
+        okResponseKeys.put("vote_result", keys);
+
+        keys = Arrays.asList("status", "clients", "description");
+        okResponseKeys.put("client_address", keys);
+
+        return okResponseKeys;
+    }
+
+    /**
+     * Menginisialisasi nilai status response dari server
+     * @return map nilai status yang telah diinisialisasi
+     */
+    private static HashMap<String, String> initializeStatusResponseValues() {
+        HashMap<String, String> statusResponseValues = new HashMap<>();
+        statusResponseValues.put("ok", "ok");
+        statusResponseValues.put("fail", "fail");
+        statusResponseValues.put("error", "error");
+
+        return statusResponseValues;
+    }
+
+    /**
+     * Menginisialisasi nilai deskripsi response dari server
+     * @return map nilai deskripsi response dari server yang telah diinisialisasi
+     */
+    private static HashMap initializeDescriptionResponseValues() {
+        HashMap<String, String> descriptionResponseValues = new HashMap<>();
+        descriptionResponseValues.put("join game fail user exists", "user exists");
+        descriptionResponseValues.put("join game fail game running", "“please wait, game is currently running");
+        descriptionResponseValues.put("join game error", "wrong request");
+        descriptionResponseValues.put("leave game fail", "you can not leave the game right now");
+        descriptionResponseValues.put("leave game error", "wrong request");
+        descriptionResponseValues.put("ready up ok", "waiting for other player to start");
+        descriptionResponseValues.put("ready up fail", "ready up fail");
+        descriptionResponseValues.put("ready up error", "ready up error");
+        descriptionResponseValues.put("list client fail", "client list can not be received");
+        descriptionResponseValues.put("list client error", "client list error");
+        descriptionResponseValues.put("info werewolf killed ok", "");
+        descriptionResponseValues.put("info werewolf killed fail", "");
+        descriptionResponseValues.put("info werewolf killed error", "");
+        descriptionResponseValues.put("kill civillian vote ok", "");
+        descriptionResponseValues.put("kill civillian vote fail", "");
+        descriptionResponseValues.put("kill civillian vote error", "");
+        descriptionResponseValues.put("info civillian killed ok", "");
+        descriptionResponseValues.put("info civillian killed fail", "");
+        descriptionResponseValues.put("info civillian killed error", "");
+        descriptionResponseValues.put("start game fail", "");
+        descriptionResponseValues.put("start game error", "");
+        descriptionResponseValues.put("change phase ok", "change phase is success");
+        descriptionResponseValues.put("change phase fail", "");
+        descriptionResponseValues.put("change phase error", "");
+        descriptionResponseValues.put("game over fail", "");
+        descriptionResponseValues.put("game over error", "");
+
+        return descriptionResponseValues;
     }
 
     /**
@@ -93,7 +175,7 @@ public class Server {
          */
         private JSONObject getResponse(JSONObject request) throws JSONException {
             JSONObject response;
-            String method = request.getString("method");
+            String method = request.getString(methodKey);
 
             switch(method) {
                 case "join":
@@ -106,6 +188,46 @@ public class Server {
 
             return response;
         }
+
+        /**
+         * Memeriksa apakah request valid
+         * @return bernilai true apabila request valid
+         */
+        private boolean isRequestValid(JSONObject request) {
+            try {
+                if (isRequestKeyValid(request)) {
+                    return true;
+                } else {
+                    return false;
+                }
+            } catch (JSONException e) {
+                e.printStackTrace();
+                return false;
+            }
+        }
+
+        /**
+         * Memeriksa apakah json request memiliki sintaks yang salah
+         * @return bernilai true apabila request memiliki sintaks yang salah
+         */
+        private boolean isRequestKeyValid(JSONObject request) throws JSONException {
+            String method = request.getString(methodKey);
+            List<String> validKeys = Client.clientToServerRequestKeys.get(method);
+
+            if (request.length() == validKeys.size()) {
+                int i = 0;
+                while (i < request.length()) {
+                    String validKey = validKeys.get(i);
+                    if (request.isNull(validKey)) {
+                        return false;
+                    }
+                }
+                return true;
+            } else {
+                return false;
+            }
+        }
+
 
         /**
          * Menyusun JSON untuk merespon request join game dari client
