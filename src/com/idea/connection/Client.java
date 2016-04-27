@@ -7,33 +7,34 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.net.Socket;
+import java.net.*;
 import java.util.*;
 
 /**
  * Created by angelynz95 on 25-Apr-16.
  */
 public class Client {
-    private Socket clientSocket;
-    private BufferedReader in;
-    private PrintWriter out;
+    private BufferedReader tcpIn;
+    private int id;
+    private DatagramSocket udpSocket;
+    private PrintWriter tcpOut;
     private Scanner scan;
+    private Socket tcpSocket;
     private String username;
     public static final HashMap<String, List<String>> clientToServerRequestKeys = initializedClientToServerRequestKeys();
     public static final HashMap<String, List<String>> clientToClientRequestKeys = initializedClientToClientRequestKeys();
-    public static final List<String> clientMethodValues = Arrays.asList("join", "leave", "ready", "client_address",
-                                                                        "vote_result_werewolf",  "vote_result_civilian",
-                                                                        "start", "change_phase", "game_over");
 
     /**
      * Konstruktor
      * @param hostName hostname server
      * @param port port server
+     * @param udpPort port UDP
      */
-    public Client(String hostName, int port) throws IOException {
-        clientSocket = new Socket(hostName, port);
-        in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-        out = new PrintWriter(clientSocket.getOutputStream(), true);
+    public Client(String hostName, int port, int udpPort) throws IOException {
+        tcpSocket = new Socket(hostName, port);
+        udpSocket = new DatagramSocket(udpPort);
+        tcpIn = new BufferedReader(new InputStreamReader(tcpSocket.getInputStream()));
+        tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
     }
 
@@ -74,7 +75,6 @@ public class Client {
         requestKeys.put("game_over", keys);
 
         return requestKeys;
-
     }
 
     /**
@@ -102,37 +102,106 @@ public class Client {
 
     /**
      * Menjalankan client
+     * @throws JSONException
+     * @throws IOException
      */
     public void run() throws JSONException, IOException {
         joinGame();
-        out.close();
-        in.close();
-        clientSocket.close();
+        if (id == 0) {
+            System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
+            System.out.println("Client port: " + udpSocket.getLocalPort());
+            while (true) {
+                DatagramPacket packet = receiveFromClient();
+                getData(packet);
+            }
+        } else {
+            JSONObject data = new JSONObject();
+            System.out.print("Input client address: ");
+            InetAddress address = InetAddress.getByName(scan.nextLine());
+            System.out.print("Input client port: ");
+            int port = Integer.parseInt(scan.nextLine());
+            data.put("client", username);
+            data.put("message", "hello");
+            sendToClient(data, address, port);
+        }
+        udpSocket.close();
+        tcpOut.close();
+        tcpIn.close();
+        tcpSocket.close();
     }
 
     /**
      * Mengirim request ke server
+     * @param request request yang dikirim ke server
      */
     private void sendToServer(JSONObject request) {
         System.out.println("Request to server: " + request);
-        out.println(request.toString());
-        out.flush();
+        tcpOut.println(request.toString());
+        tcpOut.flush();
     }
 
     /**
      * Menerima response dari server
+     * @return response dari server dalam JSON
+     * @throws JSONException
+     * @throws IOException
      */
     private JSONObject receiveFromServer() throws JSONException, IOException {
         JSONObject response;
         String serverString;
         StringBuilder stringBuilder = new StringBuilder();
 
-        serverString = in.readLine();
+        serverString = tcpIn.readLine();
         stringBuilder.append(serverString);
         response = new JSONObject(stringBuilder.toString());
+        id = response.getInt("player_id");
         System.out.println("Response from server: " + response);
 
         return response;
+    }
+
+    /**
+     * Mengirim data ke client lain
+     * @param data data yang dikirim ke client lain
+     * @param address alamat client lain
+     * @param port port UDP client lain
+     * @throws IOException
+     */
+    private void sendToClient(JSONObject data, InetAddress address, int port) throws IOException {
+        byte[] dataByte = data.toString().getBytes();
+        DatagramPacket packet = new DatagramPacket(dataByte, dataByte.length, address, port);
+        System.out.println("Data to client " + address + " " + port + ": " + data);
+        udpSocket.send(packet);
+    }
+
+    /**
+     * Menerima data dari client lain
+     * @return paket yang diterima dalam DatagramPacket
+     * @throws IOException
+     */
+    private DatagramPacket receiveFromClient() throws IOException {
+        byte[] dataByte = new byte[1024];
+        DatagramPacket packet = new DatagramPacket(dataByte, dataByte.length);
+        udpSocket.receive(packet);
+
+        return packet;
+    }
+
+    /**
+     * Mengambil data dari paket UDP dalam JSON
+     * @param packet paket UDP
+     * @return data dari paket UDP dalam JSON
+     * @throws JSONException
+     */
+    private JSONObject getData(DatagramPacket packet) throws JSONException {
+        StringBuilder stringBuilder = new StringBuilder();
+
+        String dataString = new String(packet.getData());
+        stringBuilder.append(dataString);
+        JSONObject data = new JSONObject(stringBuilder.toString());
+        System.out.println("Data from client " + packet.getAddress() + " " + packet.getPort() + ": " + data);
+
+        return data;
     }
 
     /**
@@ -140,8 +209,9 @@ public class Client {
      */
     private void joinGame() throws JSONException, IOException {
         System.out.print("Username: ");
-        String username = scan.nextLine();
+        username = scan.nextLine();
         JSONObject request = requestJoinGame(username);
+
         sendToServer(request);
         receiveFromServer();
     }
@@ -150,28 +220,29 @@ public class Client {
      * Menyusun JSON untuk request join game ke server
      * @param username username client
      */
-    private JSONObject requestJoinGame(String username) throws JSONException {
+    private JSONObject requestJoinGame(String username) throws JSONException, UnknownHostException {
         JSONObject request = new JSONObject();
         request.put("method", "join");
         request.put("username", username);
-        request.put("udp_address", clientSocket.getLocalAddress().getHostAddress());
-        request.put("udp_port", clientSocket.getLocalPort());
+        request.put("udp_address", InetAddress.getLocalHost().getHostAddress());
+        request.put("udp_port", udpSocket.getLocalPort());
 
         return request;
     }
 
     public static void main(String[] args) throws IOException, JSONException {
         Scanner scan = new Scanner(System.in);
-        String hostName;
-        int port;
 
         System.out.print("Input server IP host name: ");
-        hostName = scan.nextLine();
+        String hostName = scan.nextLine();
         System.out.print("Input server port: ");
-        port = Integer.parseInt(scan.nextLine());
+        int port = Integer.parseInt(scan.nextLine());
+        System.out.print("Input UDP port: ");
+        int udpPort = Integer.parseInt(scan.nextLine());
+        System.out.println(InetAddress.getLocalHost().getHostAddress());
 
         System.out.println("Connecting to " + hostName + " on port " + port);
-        Client client = new Client(hostName, port);
+        Client client = new Client(hostName, port, udpPort);
         client.run();
     }
 }

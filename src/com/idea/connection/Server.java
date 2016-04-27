@@ -315,8 +315,8 @@ public class Server {
         InetAddress ip = InetAddress.getLocalHost();
         String hostName = ip.getHostName();
 
-        System.out.println("Server IP address: " + ip);
-        System.out.println("Server IP host name : " + hostName);
+        System.out.println("Server address: " + ip.getHostAddress());
+        System.out.println("Server host name : " + hostName);
         while (true) {
             Socket clientSocket = serverSocket.accept();
             System.out.println("Just connected to " + clientSocket.getRemoteSocketAddress());
