@@ -1,5 +1,6 @@
 package com.idea.connection;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -14,15 +15,25 @@ import java.util.*;
  * Created by angelynz95 on 25-Apr-16.
  */
 public class Client {
-    private BufferedReader tcpIn;
-    private int id;
-    private DatagramSocket udpSocket;
-    private PrintWriter tcpOut;
-    private Scanner scan;
-    private Socket tcpSocket;
-    private String username;
     public static final HashMap<String, List<String>> clientToServerRequestKeys = initializedClientToServerRequestKeys();
     public static final HashMap<String, List<String>> clientToClientRequestKeys = initializedClientToClientRequestKeys();
+    public static final HashMap<String, String> commands = initializedCommands();
+    public static final HashMap<Integer, String> answers = initializedAnswerChoices();
+
+    private BufferedReader tcpIn;
+    private PrintWriter tcpOut;
+    private DatagramSocket udpSocket;
+    private Socket tcpSocket;
+    private Scanner scan;
+
+    private int id;
+    private int proposalId;
+    private int leaderId;
+    private boolean isProposer;
+    private boolean isLeader;
+    private boolean isAlive;
+    private String username;
+    private List<ClientInfo> clientsInfo;
 
     /**
      * Konstruktor
@@ -36,6 +47,11 @@ public class Client {
         tcpIn = new BufferedReader(new InputStreamReader(tcpSocket.getInputStream()));
         tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
+
+        proposalId = -1;
+        leaderId = -1;
+        isProposer = false;
+        isLeader = false;
     }
 
     /**
@@ -100,6 +116,27 @@ public class Client {
         return requestKeys;
     }
 
+    private static HashMap initializedCommands() {
+        HashMap<String, String> commands = new HashMap<>();
+        commands.put("join", "Joining the game...");
+        commands.put("leave", "Do you want to leave the game? (y/n)");
+        commands.put("ready", "Are you ready? (y/n)");
+        commands.put("username", "Username: ");
+        commands.put("left", "Are you sure want to leave the game?");
+        commands.put("client_list", "Retrieving players information...");
+        commands.put("prepare_proposal_client", "Propose to be a leader...");
+
+        return commands;
+    }
+
+    private static HashMap initializedAnswerChoices() {
+        HashMap<Integer, String> answerChoices = new HashMap<>();
+        answerChoices.put(1, "y");
+        answerChoices.put(0, "n");
+
+        return answerChoices;
+    }
+
     /**
      * Menjalankan client
      * @throws JSONException
@@ -154,8 +191,6 @@ public class Client {
         serverString = tcpIn.readLine();
         stringBuilder.append(serverString);
         response = new JSONObject(stringBuilder.toString());
-        id = response.getInt("player_id");
-        System.out.println("Response from server: " + response);
 
         return response;
     }
@@ -183,6 +218,7 @@ public class Client {
         byte[] dataByte = new byte[1024];
         DatagramPacket packet = new DatagramPacket(dataByte, dataByte.length);
         udpSocket.receive(packet);
+        System.out.println("Received data: " + packet);
 
         return packet;
     }
@@ -206,14 +242,32 @@ public class Client {
 
     /**
      * Request join game ke server
+     * @throws JSONException
+     * @throws IOException
      */
     private void joinGame() throws JSONException, IOException {
-        System.out.print("Username: ");
-        username = scan.nextLine();
-        JSONObject request = requestJoinGame(username);
+        System.out.println(commands.get("join"));
+        boolean isValid = false;
+        do {
+            System.out.print(commands.get("username"));
+            username = scan.nextLine();
 
-        sendToServer(request);
-        receiveFromServer();
+            JSONObject request = requestJoinGame(username);
+            sendToServer(request);
+
+            JSONObject response = receiveFromServer();
+            String status = response.getString("status");
+            switch (status) {
+                case "ok":
+                    isValid = true;
+                    id = response.getInt("player_id");
+                    break;
+                default:
+                    String description = response.getString("description");
+                    System.out.println(description);
+                    break;
+            }
+        } while (!isValid);
     }
 
     /**
@@ -228,6 +282,271 @@ public class Client {
         request.put("udp_port", udpSocket.getLocalPort());
 
         return request;
+    }
+
+    /**
+     * Request meninggalkan game ke server
+     * @throws JSONException
+     * @throws IOException
+     */
+    private void leaveGame() throws JSONException, IOException {
+        System.out.println(commands.get("leave"));
+        String decision = scan.nextLine();
+        if (decision.equals(answers.get(1))) {
+            JSONObject request = requestLeaveGame();
+            sendToServer(request);
+            JSONObject response = receiveFromServer();
+            String status = response.getString("status");
+            switch (status) {
+                case "ok":
+                    System.out.println(commands.get("left"));
+                    break;
+                default:
+                    String description = response.getString("description");
+                    System.out.println(description);
+                    break;
+            }
+        }
+    }
+
+    /**
+     * Menyusun JSON untuk request leave game ke server
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestLeaveGame() throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "leave");
+
+        return request;
+    }
+
+
+    /**
+     * Menyatakan diri telah siap bermain kepada server
+     * @throws IOException
+     * @throws JSONException
+     */
+    private void readyUp() throws IOException, JSONException {
+        System.out.println(commands.get("ready"));
+        String decision = scan.nextLine();
+        if (decision.equals(answers.get(1))) {
+            JSONObject request = new JSONObject();
+            sendToServer(request);
+            JSONObject response = receiveFromServer();
+            System.out.println(response.getString("description"));
+        }
+    }
+
+    /**
+     * Menyusun JSON untuk menyatakan diri sudah siap bermain ke server
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestReadyUp() throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "ready");
+
+        return request;
+    }
+
+    /**
+     * Meminta daftar client dari server dan menyimpannya
+     * @throws JSONException
+     * @throws IOException
+     */
+    private void askClientList() throws JSONException, IOException {
+        boolean isSuccess = true;
+        do {
+            System.out.println(commands.get("client_list"));
+            JSONObject request = requestClientAddress();
+            sendToServer(request);
+
+            JSONObject response = receiveFromServer();
+            System.out.println(response.getString("description"));
+            String status =  response.getString("status");
+            switch (status) {
+                case "ok":
+                    saveClientList(response.getJSONArray("clients"));
+                    break;
+                default:
+                    isSuccess = false;
+                    break;
+            }
+        } while (!isSuccess);
+    }
+
+    /**
+     * Menyimpan daftar client
+     * @param clients array berisi response daftar client dari server
+     * @throws JSONException
+     */
+    private void saveClientList(JSONArray clients) throws JSONException {
+        for (int i=0; i<clients.length(); i++) {
+            JSONObject client = clients.getJSONObject(i);
+            int playerId = client.getInt("player_id");
+            if (playerId != id) {
+                // Do not store this client info
+                boolean isAlive = client.getBoolean("is_alive");
+                String addressName = client.getString("address");
+                InetAddress address = null;
+                try {
+                    address = InetAddress.getByName(addressName);
+                } catch (UnknownHostException e) {
+                    e.printStackTrace();
+                    System.out.println(commands.get("player_address_lost"));
+                }
+                int port = client.getInt("port");
+                String username = client.getString("username");
+                clientsInfo.add(new ClientInfo(playerId, isAlive, address, port, username));
+            }
+        }
+    }
+
+    /**
+     * Menyusun JSON untuk meminta informasi seluruh client
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestClientAddress() throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "client_address");
+
+        return request;
+    }
+
+    private void prepareProposalToClient() throws JSONException, IOException {
+        System.out.println(commands.get("prepare_proposal_client"));
+        JSONObject request = requestPrepareProposalToClient();
+        for (int i=0; i<clientsInfo.size(); i++) {
+            InetAddress address = clientsInfo.get(i).getAddress();
+            int port = clientsInfo.get(i).getPort();
+            sendToClient(request, address, port);
+        }
+        int receivedPacket = 0;
+        while (receivedPacket < clientsInfo.size()) {
+            // TODO: Wait for packet
+            DatagramPacket packet = receiveFromClient();
+            JSONObject response = new JSONObject(new String(packet.getData(), 0, packet.getLength()));
+            System.out.println("Response converted to JSON: " + response);
+
+        }
+    }
+
+    /**
+     * Menyusun JSON untuk request menyiapkan proposal dari proposer ke acceptor
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestPrepareProposalToClient() throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "prepare_proposal");
+        request.put("proposal_id", getProposalId());
+
+        return request;
+    }
+
+    /**
+     * Menyusun JSON untuk request menerima dari proposer ke acceptor
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestAcceptProposal() throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "accept_proposal");
+        request.put("proposal_id", getProposalId());
+        request.put("kpu_id", leaderId);
+
+        return request;
+    }
+
+    /**
+     * Menyusun JSON untuk menyatakan acceptor menerima proposal ke server
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestPrepareProposalToServer() throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "prepare_proposal");
+        request.put("kpu_id", leaderId);
+        request.put("description", "Kpu is selected");
+
+        return request;
+    }
+
+    /**
+     * Menyusun JSON untuk request mengirimkan vote untuk membunuh werewolf ke leader
+     * @param werewolfId ID werewolf yang ingin dibunuh
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestVoteWerewolf(int werewolfId) throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "vote_werewolf");
+        request.put("player_id", werewolfId);
+
+        return request;
+    }
+
+    /**
+     * Menyusun JSON untuk mengirim hasil vote membunuh werewolf dari leader ke server
+     * @param voteStatus status vote
+     * @param playerKilled ID client yang dibunuh
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestVoteResultWerewolf(int voteStatus, int playerKilled) throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "vote_result_werewolf");
+        request.put("vote_status", voteStatus);
+        request.put("player_killed", playerKilled);
+        // TODO: request.put("vote_result", );
+
+        return request;
+    }
+
+    /**
+     * Menyusun JSON untuk request mengirimkan vote untuk membunuh civilian ke leader
+     * @param civilianId ID civilian yang ingin dibunuh
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestVoteCivilian(int civilianId) throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "vote_civilian");
+        request.put("player_id", civilianId);
+
+        return request;
+    }
+
+    /**
+     * Menyusun JSON untuk mengirim hasil vote membunuh civilian dari leader ke server
+     * @param voteStatus status vote
+     * @param playerKilled ID client yang dibunuh
+     * @return objek JSON yang akan dikirim
+     * @throws JSONException
+     */
+    private JSONObject requestVoteResultCivilian(int voteStatus, int playerKilled) throws JSONException {
+        JSONObject request = new JSONObject();
+        request.put("method", "vote_result_civilian");
+        request.put("vote_status", voteStatus);
+        request.put("player_killed", playerKilled);
+        // TODO: request.put("vote_result", );
+
+        return request;
+    }
+
+    /**
+     * Mendapatkan ID proposal client yang bersangkutan, terdiri dari sequence number dan ID client
+     * @return ID proposal dalam JSONArray
+     */
+    private JSONArray getProposalId() {
+        JSONArray proposalIdArray = new JSONArray();
+        proposalId += 1;
+        proposalIdArray.put(proposalId);
+        proposalIdArray.put(id);
+
+        return proposalIdArray;
     }
 
     public static void main(String[] args) throws IOException, JSONException {
