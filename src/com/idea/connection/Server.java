@@ -11,6 +11,7 @@ import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.*;
 
 /**
@@ -19,6 +20,7 @@ import java.util.*;
 public class Server {
     private ArrayList<ClientController> clients;
     private ServerSocket serverSocket;
+    private int nextClientId = 0;
     public static final HashMap<String, List<String>> okResponseKeys = initializeOkResponseKeys();
     public static final List<String> failResponseKeys = Arrays.asList("status", "description");
     public static final List<String> errorResponseKeys = Arrays.asList("status", "description");
@@ -116,6 +118,71 @@ public class Server {
     }
 
     /**
+     * Menentukan role dari setiap client, apakah warga biasa atau werewolf
+     */
+    private void decideRole() {
+        int roles[] = new int[clients.size()];
+        int playerId;
+
+        Random rand = new Random();
+        double n = 0.5 * (clients.size() - 1);
+        int countWerewolf = rand.nextInt(2) + (int) n;
+        for (int i = 0; i < countWerewolf; i++) {
+            do {
+                playerId = rand.nextInt(0) +  (clients.size() - 1);
+
+            } while(roles[playerId] == 1);
+
+            roles[playerId] = 1;
+        }
+
+        for (int i = 0; i < roles.length; i++) {
+            String role;
+            if (roles[i] == 1) {
+                role = "werewolf";
+            } else {
+                role = "civilian";
+            }
+            clients.get(i).setRole(role);
+        }
+    }
+
+    /**
+     * Mengembalikan true jika semua client telah mengirimkan request ready
+     */
+    public boolean isAllReady() {
+        boolean allReady = true;
+        int i = 0;
+        while ((allReady) && (i < clients.size())) {
+            if (!clients.get(i).isReady) {
+                allReady = false;
+            } else {
+                i++;
+            }
+        }
+        return allReady;
+    }
+
+    /**
+     * Memeriksa apakah username telah ada atau tidak
+     * @return true jika username telah ada
+     */
+    private boolean isUsernameExist(String username) {
+        boolean found = false;
+        int i = 0;
+        while ((!found) && (i < clients.size())) {
+            if (clients.get(i).username.equals(username)) {
+                found = true;
+            } else {
+                i++;
+            }
+        }
+        return found;
+    }
+
+
+
+    /**
      * Controller untuk setiap client yang terhubung dengan server
      */
     private class ClientController extends Thread {
@@ -125,6 +192,9 @@ public class Server {
         private Socket clientSocket;
         private String username;
         private boolean isAlive;
+        private boolean isReady = false;
+        private String role;
+        private int countDay = 0;
 
         /**
          * Konstruktor
@@ -137,53 +207,166 @@ public class Server {
             out = new PrintWriter(this.clientSocket.getOutputStream(), true);
         }
 
+        public void setRole(String role) {
+            this.role = role;
+        }
+
+        /**
+         * Mengirim pesan ke server
+         * @param response pesan yang akan dikirim
+         */
+        public void sendToClient(JSONObject response) {
+            System.out.println("Response to client: " + response);
+            out.println(response.toString());
+            out.flush();
+        }
+
+        /**
+         * Menerima pesan dari client
+         * @return pesan yang diterima dari client
+         * @throws IOException
+         * @throws JSONException
+         */
+        public JSONObject receiveFromClient() throws IOException, JSONException {
+            JSONObject request;
+            String clientString;
+            StringBuilder stringBuilder = new StringBuilder();
+
+            clientString = in.readLine();
+            stringBuilder.append(clientString);
+            request = new JSONObject(stringBuilder.toString());
+            System.out.println("Receive from server: " + request);
+
+            return request;
+        }
+
         /**
          * Menjalankan controller client
          */
         public void run() {
             JSONObject request, response;
-            String clientString;
-            StringBuilder stringBuilder;
-
-            try {
-                while ((clientString = in.readLine()) != null) {
-                    stringBuilder = new StringBuilder();
-                    stringBuilder.append(clientString);
-                    request = new JSONObject(stringBuilder.toString());
-                    System.out.println("Request from client: " + request);
-                    response = getResponse(request);
-                    System.out.println("Response to client: " + response);
-                    out.println(response.toString());
-                    out.flush();
-                    System.out.println();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (JSONException e) {
-                e.printStackTrace();
-            } finally {
                 try {
-                    in.close();
-                    out.close();
-                    clientSocket.close();
+                    while (!isReady) {
+                        request = receiveFromClient();
+                        response = getResponse(request);
+                        sendToClient(response);
+                    }
+
+                    while (!isAllReady()) {
+                        // Menunggu sampai semua client ready
+                    }
+
+                    startGame();
+
+                    String narration = "The day has came. All villagers wake up.";
+                    changePhase("day", narration);
+
+
+                } catch (SocketException e) {
+                    e.printStackTrace();
+                    clients.remove(this);
                 } catch (IOException e) {
                     e.printStackTrace();
+                } catch (JSONException e) {
+                    e.printStackTrace();
                 }
-            }
+//                    try {
+//                        in.close();
+//                        out.close();
+//                        clientSocket.close();
+//                    } catch (IOException e) {
+//                        e.printStackTrace();
+//                    }
         }
+
+        private void startGame() throws JSONException, IOException {
+            JSONObject request = new JSONObject();
+            JSONObject response;
+            ArrayList<String> friends = new ArrayList<>();
+
+            request.put("method", "start");
+            request.put("time", "night");
+            request.put("role", role);
+            request.put("friend", friends);
+            request.put("description", "game is started");
+
+            do {
+                sendToClient(request);
+                response = receiveFromClient();
+
+                switch (response.getString("status")) {
+                    case "fail":
+                        System.out.println("Failed to start game: " + response.getString("description"));
+                        break;
+                    case "error":
+                        System.out.println("Error when starting game: " + response.getString("description"));
+                        break;
+                }
+            } while (!response.getString("status").equals("ok"));
+
+        }
+
+        private void changePhase(String time, String narration) throws JSONException, IOException {
+            JSONObject request = new JSONObject();
+            JSONObject response;
+
+            request.put("method", "change_phase");
+            request.put("time", time);
+            request.put("days", countDay);
+            request.put("description", narration);
+
+            if (time.equals("day")) {
+                countDay++;
+            }
+
+            do {
+                sendToClient(request);
+                response = receiveFromClient();
+
+                switch (response.getString("status")) {
+                    case "fail":
+                        System.out.println("Failed to change phase: " + response.getString("description"));
+                        break;
+                    case "error":
+                        System.out.println("Error when changing phase: " + response.getString("description"));
+                        break;
+                }
+            } while (!response.getString("status").equals("ok"));
+        }
+
 
         /**
          * Menentukan response server berdasarkan request client
          * @param request request client
          */
         private JSONObject getResponse(JSONObject request) throws JSONException {
+            JSONObject response;
             String method = request.getString(methodKey);
-            String status = getStatus();
-            JSONObject response = packResponse(method, status);
+            String status = getStatus(request);
+
+            if (status.equals("ok")) {
+                switch (method) {
+                    case "ready":
+                        isReady = true;
+                        break;
+                    case "join":
+                        username = request.getString("username");
+                        break;
+                }
+            }
+
+            response = packResponse(method, status);
 
             return response;
         }
 
+        /**
+         * Membuat response yang sesuai dengan method dan status
+         * @param method method dari response yang akan dikirim
+         * @param status status dari response yang akan dikirim
+         * @return
+         * @throws JSONException
+         */
         private JSONObject packResponse(String method, String status) throws JSONException {
             JSONObject response = new JSONObject();
 
@@ -197,7 +380,7 @@ public class Server {
                             response.put(key, status);
                             break;
                         case "description":
-                            response.put(key, getDescription(status));
+                            response.put(key, getDescription(method, status));
                             break;
                         case "player_id":
                             response.put(key, clientId);
@@ -220,7 +403,7 @@ public class Server {
                             response.put(key, status);
                             break;
                         case "description":
-                            response.put(key, getDescription(status));
+                            response.put(key, getDescription(method, status));
                             break;
                     }
                 }
@@ -268,12 +451,31 @@ public class Server {
             }
         }
 
-        private String getStatus() {
-            return "status";
+        /**
+         * Mengembalikan status berdasarkan request
+         * @param request
+         * @return status
+         */
+        private String getStatus(JSONObject request) {
+            String status = "";
+            if (isRequestValid(request)) {
+                status =  "ok";
+            } else {
+                switch (methodKey) {
+                    case "join":
+                        if (isUsernameExist(username)) {
+                            status = "fail";
+                        } else {
+                            status =  "error";
+                        }
+                        break;
+                }
+            }
+            return status;
         }
 
-        private String getDescription(String method) {
-            return descriptionResponseValues.get(method + " " + getStatus());
+        private String getDescription(String method, String status) {
+            return descriptionResponseValues.get(method + " " + status);
         }
 
         private JSONObject getClientInfo() throws JSONException {
@@ -301,7 +503,8 @@ public class Server {
      * Memanggil ClientController
      */
     public void controlClient(Socket clientSocket) throws IOException {
-        int clientId = clients.size();
+        int clientId = nextClientId;
+        nextClientId++;
         ClientController clientController = new ClientController(clientSocket, clientId);
         clients.add(clientController);
         Thread thread = new Thread(clientController);
