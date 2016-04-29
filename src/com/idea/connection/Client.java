@@ -658,7 +658,7 @@ public class Client {
      * @return objek JSON yang akan dikirim
      * @throws JSONException
      */
-    private JSONObject requestVoteResultCivilian(HashMap<Integer, Integer> voteStatus, int playerKilled) throws JSONException {
+    private JSONObject requestVoteResultCivilian(HashMap<Integer, Integer> voteResult, int voteStatus, int playerKilled) throws JSONException {
         JSONObject request = new JSONObject();
         request.put("method", "vote_result_civilian");
         request.put("vote_status", voteStatus);
