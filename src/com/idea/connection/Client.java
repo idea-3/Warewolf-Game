@@ -129,6 +129,9 @@ public class Client {
         commands.put("player_address_lost", "Lost a player address...");
         commands.put("prepare_me_leader", "I am a leader (propose)...");
         commands.put("accept_me_leader", "I am a leader (accept)...");
+        commands.put("start_game", "Game is starting...");
+        commands.put("change_phase", "Phase change...");
+        commands.put("game_over", "Game over! The winner is ");
 
         return commands;
     }
@@ -676,6 +679,121 @@ public class Client {
         request.put("vote_result", voteArrays);
 
         return request;
+    }
+
+    JSONObject packResponse(String status, String method) throws JSONException {
+        JSONObject response = new JSONObject();
+        response.put("status", status);
+        switch (status) {
+            case "error":
+                response.put("description", method + " error");
+                break;
+            case "fail":
+                response.put("description", method + " fail");
+                break;
+        }
+        return response;
+    }
+
+    /**
+     * Memeriksa apakah json request memiliki sintaks yang salah
+     * @return bernilai true apabila request memiliki sintaks yang salah
+     */
+    private boolean isRequestKeyValid(ArrayList<String> keys, JSONObject request) {
+        if (request.length() == keys.size()) {
+            int i = 0;
+            while (i < request.length()) {
+                String key;
+                key = keys.get(i);
+                if (request.isNull(key)) {
+                    return false;
+                }
+            }
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    private void startGame() throws IOException, JSONException {
+        JSONObject request = receiveFromServer();
+        JSONObject response;
+        ArrayList<String> keys = new ArrayList<>();
+        switch (request.getString("role")) {
+            case "civilian":
+                keys = new ArrayList<>(Arrays.asList("method", "time", "role", "description"));
+                break;
+            case "werewolf":
+                keys = new ArrayList<>(Arrays.asList("method", "time", "role", "friend", "description"));
+                break;
+        }
+
+        if (isRequestKeyValid(keys, request)) {
+            response = packResponse("ok", request.getString("method"));
+
+            System.out.print(commands.get("start_game"));
+            System.out.println(request.getString("description"));
+
+            if (request.getString("role").equals("werewolf")) {
+                System.out.println("Your friends: ");
+                JSONArray friends = response.getJSONArray("friend");
+                for (int i = 0; i < friends.length(); i++) {
+                    System.out.println(friends.getString(i));
+                }
+            }
+
+            //TODO: check when start game is failed
+        } else {
+            response = packResponse("error", request.getString("method"));
+        }
+        sendToServer(response);
+    }
+
+    /**
+     * Menerima request dari server ketika fase berganti
+     * @throws IOException
+     * @throws JSONException
+     */
+    private void changePhase() throws IOException, JSONException {
+        JSONObject request = receiveFromServer();
+        JSONObject response;
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "time", "days", "description"));
+
+        if (isRequestKeyValid(keys, request)) {
+            response = packResponse("ok", request.getString("method"));
+
+            System.out.print(commands.get("change_phase"));
+            System.out.println(request.getString("description"));
+
+            //TODO: check when change phase is failed
+        } else {
+            response = packResponse("error", request.getString("method"));
+        }
+        sendToServer(response);
+    }
+
+    /**
+     * Menerima request dari server ketika permainan berakhir
+     * @throws IOException
+     * @throws JSONException
+     */
+    private void gameOver() throws IOException, JSONException {
+        JSONObject request = receiveFromServer();
+        JSONObject response;
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "winner", "description"));
+
+        if (isRequestKeyValid(keys, request)) {
+            response = packResponse("ok", request.getString("method"));
+
+            System.out.println(request.getString("description"));
+            System.out.print(commands.get("game_over"));
+            System.out.println(request.getString("winner"));
+
+            //TODO: check when game over is failed
+        } else {
+            response = packResponse("error", request.getString("method"));
+        }
+        sendToServer(response);
     }
 
     /**
