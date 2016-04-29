@@ -59,4 +59,12 @@ public class ClientInfo {
     public void setUsername(String username) {
         this.username = username;
     }
+
+    public void set(int playerId, boolean isAlive, InetAddress address, int port, String username) {
+        this.playerId = playerId;
+        this.isAlive = isAlive;
+        this.address = address;
+        this.port = port;
+        this.username = username;
+    }
 }

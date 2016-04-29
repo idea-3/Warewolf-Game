@@ -125,6 +125,10 @@ public class Client {
         commands.put("left", "Are you sure want to leave the game?");
         commands.put("client_list", "Retrieving players information...");
         commands.put("prepare_proposal_client", "Propose to be a leader...");
+        commands.put("accept_proposal_client", "Accept to be a leader...");
+        commands.put("player_address_lost", "Lost a player address...");
+        commands.put("prepare_me_leader", "I am a leader (propose)...");
+        commands.put("accept_me_leader", "I am a leader (accept)...");
 
         return commands;
     }
@@ -384,9 +388,9 @@ public class Client {
     private void saveClientList(JSONArray clients) throws JSONException {
         for (int i=0; i<clients.length(); i++) {
             JSONObject client = clients.getJSONObject(i);
-            int playerId = client.getInt("player_id");
-            if (playerId != id) {
-                // Do not store this client info
+            int clientId = client.getInt("player_id");
+            if (clientId != id) {
+                // ID client bukan dirinya sendiri
                 boolean isAlive = client.getBoolean("is_alive");
                 String addressName = client.getString("address");
                 InetAddress address = null;
@@ -398,8 +402,42 @@ public class Client {
                 }
                 int port = client.getInt("port");
                 String username = client.getString("username");
-                clientsInfo.add(new ClientInfo(playerId, isAlive, address, port, username));
+
+                // Memeriksa keberadaan client di clientsInfo
+                int idInClientsInfo = getIdxInClientsInfo(clientId);
+                if (idInClientsInfo == -1) {
+                    clientsInfo.add(new ClientInfo(clientId, isAlive, address, port, username));
+                } else {
+                    if (clientsInfo.get(idInClientsInfo).isAlive() != isAlive) {
+                        clientsInfo.get(idInClientsInfo).set(clientId, isAlive, address, port, username);
+                        System.out.println("Player " + clientId + " is dead.");
+                    }
+                }
             }
+        }
+    }
+
+    /**
+     * Memeriksa apakah ID client pada parameter terdapat pada clientsInfo pada atribut
+     * @param clientId yang ingin dibandingkan
+     * @return indeks keberadaan ClientInfo yang dicari, bernilai -1 apabila tidak ditemukan
+     */
+    private int getIdxInClientsInfo(int clientId) {
+        int i = 0;
+        boolean isExist = false;
+        while (i<clientsInfo.size() && !isExist) {
+            ClientInfo clientInfo = clientsInfo.get(i);
+            if (clientInfo.getPlayerId()==clientId) {
+                isExist = true;
+            } else {
+                i++;
+            }
+        }
+
+        if (!isExist) {
+            return -1;
+        } else {
+            return i;
         }
     }
 
@@ -415,6 +453,11 @@ public class Client {
         return request;
     }
 
+    /**
+     * Mengirimkan proposal dari proposer ke acceptor
+     * @throws JSONException
+     * @throws IOException
+     */
     private void prepareProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("prepare_proposal_client"));
         JSONObject request = requestPrepareProposalToClient();
@@ -424,12 +467,54 @@ public class Client {
             sendToClient(request, address, port);
         }
         int receivedPacket = 0;
-        while (receivedPacket < clientsInfo.size()) {
-            // TODO: Wait for packet
+        int okProposal = 0;
+        while (receivedPacket < clientsInfo.size()-1) {
+            // Menunggu paket sampai seluruh acceptor mengirim response
             DatagramPacket packet = receiveFromClient();
             JSONObject response = new JSONObject(new String(packet.getData(), 0, packet.getLength()));
             System.out.println("Response converted to JSON: " + response);
 
+            String status = response.getString("status");
+            String description = response.getString("description");
+            if (!status.equals("error")) {
+                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
+            } else {
+                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
+                if (status.equals("ok")) {
+                    okProposal++;
+                }
+            }
+            if (okProposal == receivedPacket) {
+                isLeader = true;
+                System.out.println(commands.get("prepare_me_leader"));
+            }
+            // TODO: Previous accepted dipakai?
+        }
+    }
+
+    /**
+     * Mencari client dengan alamat dan port dari parameter pada list clientsInfo
+     * @param address alamat yang ingin ditemukan
+     * @param port port yang ingin ditemukan
+     * @return ID client yang ditemukan, bernilai -1 jika tidak ditemukan
+     */
+    private int getClientIdByAddress(InetAddress address, int port) {
+        int clientId = 0;
+        int i = 0;
+        boolean isFound = false;
+        while (i<clientsInfo.size() && !isFound) {
+            ClientInfo clientInfo = clientsInfo.get(i);
+            if (clientInfo.getAddress().equals(address) && clientInfo.getPort()==port) {
+                isFound = true;
+            } else {
+                i++;
+            }
+        }
+
+        if (isFound) {
+            return clientId;
+        } else {
+            return -1;
         }
     }
 
@@ -446,6 +531,39 @@ public class Client {
         return request;
     }
 
+    private void acceptProposalToClient() throws JSONException, IOException {
+        System.out.println(commands.get("accept_proposal_client"));
+        JSONObject request = requestAcceptProposal();
+        for (int i=0; i<clientsInfo.size(); i++) {
+            InetAddress address = clientsInfo.get(i).getAddress();
+            int port = clientsInfo.get(i).getPort();
+            sendToClient(request, address, port);
+        }
+        int receivedPacket = 0;
+        int okProposal = 0;
+        while (receivedPacket < clientsInfo.size()-1) {
+            // Menunggu paket sampai seluruh acceptor mengirim response
+            DatagramPacket packet = receiveFromClient();
+            JSONObject response = new JSONObject(new String(packet.getData(), 0, packet.getLength()));
+            System.out.println("Response converted to JSON: " + response);
+
+            String status = response.getString("status");
+            String description = response.getString("description");
+            if (!status.equals("error")) {
+                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
+            } else {
+                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
+                if (status.equals("ok")) {
+                    okProposal++;
+                }
+            }
+            if (okProposal == receivedPacket) {
+                isLeader = true;
+                System.out.println(commands.get("accept_me_leader"));
+            }
+        }
+    }
+
     /**
      * Menyusun JSON untuk request menerima dari proposer ke acceptor
      * @return objek JSON yang akan dikirim
@@ -455,9 +573,13 @@ public class Client {
         JSONObject request = new JSONObject();
         request.put("method", "accept_proposal");
         request.put("proposal_id", getProposalId());
-        request.put("kpu_id", leaderId);
+        request.put("kpu_id", proposalId); // TODO: kpu_id
 
         return request;
+    }
+
+    private void acceptProposalToServer() {
+
     }
 
     /**
@@ -465,7 +587,7 @@ public class Client {
      * @return objek JSON yang akan dikirim
      * @throws JSONException
      */
-    private JSONObject requestPrepareProposalToServer() throws JSONException {
+    private JSONObject requestAcceptProposalToServer() throws JSONException {
         JSONObject request = new JSONObject();
         request.put("method", "prepare_proposal");
         request.put("kpu_id", leaderId);
@@ -495,13 +617,23 @@ public class Client {
      * @return objek JSON yang akan dikirim
      * @throws JSONException
      */
-    private JSONObject requestVoteResultWerewolf(int voteStatus, int playerKilled) throws JSONException {
+    private JSONObject requestVoteResultWerewolf(HashMap<Integer, Integer> voteResult, int voteStatus, int playerKilled) throws JSONException {
         JSONObject request = new JSONObject();
         request.put("method", "vote_result_werewolf");
         request.put("vote_status", voteStatus);
         request.put("player_killed", playerKilled);
-        // TODO: request.put("vote_result", );
 
+        List<List<Integer>> voteArrays = new ArrayList<>();
+        for (Map.Entry<Integer, Integer> vote : voteResult.entrySet()) {
+            Integer clientId = vote.getKey();
+            Integer voteNum = vote.getValue();
+
+            List<Integer> voteArray = new ArrayList<>();
+            voteArray.add(clientId);
+            voteArray.add(voteNum);
+            voteArrays.add(voteArray);
+        }
+        request.put("vote_result", voteArrays);
         return request;
     }
 
@@ -526,12 +658,22 @@ public class Client {
      * @return objek JSON yang akan dikirim
      * @throws JSONException
      */
-    private JSONObject requestVoteResultCivilian(int voteStatus, int playerKilled) throws JSONException {
+    private JSONObject requestVoteResultCivilian(HashMap<Integer, Integer> voteStatus, int playerKilled) throws JSONException {
         JSONObject request = new JSONObject();
         request.put("method", "vote_result_civilian");
         request.put("vote_status", voteStatus);
         request.put("player_killed", playerKilled);
-        // TODO: request.put("vote_result", );
+        List<List<Integer>> voteArrays = new ArrayList<>();
+        for (Map.Entry<Integer, Integer> vote : voteResult.entrySet()) {
+            Integer clientId = vote.getKey();
+            Integer voteNum = vote.getValue();
+
+            List<Integer> voteArray = new ArrayList<>();
+            voteArray.add(clientId);
+            voteArray.add(voteNum);
+            voteArrays.add(voteArray);
+        }
+        request.put("vote_result", voteArrays);
 
         return request;
     }
