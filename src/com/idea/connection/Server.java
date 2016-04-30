@@ -20,7 +20,7 @@ import java.util.*;
 public class Server {
     private ArrayList<ClientController> clients;
     private boolean isDecideRoleDone;
-    private boolean isGamePlaying;
+    private boolean isGameRunning = false;
     private boolean isLeaderJobDone;
     private boolean isVoteDone;
     private int leaderId = -1;
@@ -133,13 +133,14 @@ public class Server {
     private void decideRole() {
         int roles[] = new int[clients.size()];
         int playerId;
+        int minimumTotalWerewolf = 2;
 
         Random rand = new Random();
         double n = 0.5 * (clients.size() - 1);
-        int countWerewolf = rand.nextInt(2) + (int) n;
+        int countWerewolf = rand.nextInt(((int) n - minimumTotalWerewolf) + 1) + minimumTotalWerewolf;
         for (int i = 0; i < countWerewolf; i++) {
             do {
-                playerId = rand.nextInt(0) +  (clients.size() - 1);
+                playerId = rand.nextInt(clients.size() - 1) +  clients.get(0).clientId;
             } while(roles[playerId] == 1);
 
             roles[playerId] = 1;
@@ -149,6 +150,7 @@ public class Server {
             String role;
             if (roles[i] == 1) {
                 role = "werewolf";
+                clients.get(i).isWerewolf = true;
             } else {
                 role = "civilian";
             }
@@ -158,18 +160,25 @@ public class Server {
 
     /**
      * Mengembalikan true jika semua client telah mengirimkan request ready
+     * @return true jika semua pemain telah siap
+     * @throws InterruptedException
      */
-    public boolean isAllReady() {
-        boolean allReady = true;
-        int i = 0;
-        while ((allReady) && (i < clients.size())) {
-            if (!clients.get(i).isReady) {
-                allReady = false;
-            } else {
-                i++;
+    private boolean isAllReady() throws InterruptedException {
+        Thread.sleep(1000);
+        if (clients.size() >= 6) {
+            boolean allReady = true;
+            int i = 0;
+            while ((allReady) && (i < clients.size())) {
+                if (!clients.get(i).isReady) {
+                    allReady = false;
+                } else {
+                    i++;
+                }
             }
+            return allReady;
+        } else {
+            return false;
         }
-        return allReady;
     }
 
     /**
@@ -240,6 +249,7 @@ public class Server {
         private boolean isAlive = false;
         private boolean isProposer = false;
         private boolean isReady = false;
+        private boolean isWerewolf = false;
         private BufferedReader in;
         private int clientId;
         private int countDay = 0;
@@ -306,6 +316,7 @@ public class Server {
 
                     while (!isAllReady()) {
                         // Menunggu sampai semua client ready
+
                     }
 
                     if (clientId == clients.get(0).clientId) {
@@ -315,23 +326,30 @@ public class Server {
                         while (!isDecideRoleDone) {}
                     }
                     startGame();
+                    isGameRunning = true;
 
-                    setProposer();
-                    if (!isProposer) {
-                        acceptLeader();
-                    }
-                    handleVote("day");
+                    do {
+                        setProposer();
+                        if (!isProposer) {
+                            acceptLeader();
+                        }
+                        handleDayVote();
 
-                    changePhase("night", nightNarration);
-                    handleVote("night");
+                        changePhase("night", nightNarration);
+                        handleNightVote();
 
-                    changePhase("day", dayNarration);
+                        changePhase("day", dayNarration);
+                    } while (!isGameOver());
+                    isGameRunning = false;
+                    announceGameOver(lastWinner);
                 } catch (SocketException e) {
                     e.printStackTrace();
                     clients.remove(this);
                 } catch (IOException e) {
                     e.printStackTrace();
                 } catch (JSONException e) {
+                    e.printStackTrace();
+                } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
 //                    try {
@@ -347,6 +365,14 @@ public class Server {
             JSONObject request = new JSONObject();
             JSONObject response;
             ArrayList<String> friends = new ArrayList<>();
+
+            if (role.equals("werewolf")) {
+                for (int i = 0; i < clients.size(); i++) {
+                    if (clients.get(i).isWerewolf) {
+                        friends.add(clients.get(i).username);
+                    }
+                }
+            }
 
             request.put("method", "start");
             request.put("time", "night");
@@ -454,19 +480,22 @@ public class Server {
          * @throws IOException
          * @throws JSONException
          */
-        private void handleVote(String phase) throws IOException, JSONException {
+        private void handleDayVote() throws IOException, JSONException {
+            int countVote = 0;
             JSONObject voteResult;
             JSONObject response;
+            String phase = "day";
 
             isVoteDone = false;
             do {
+                countVote++;
                 vote(phase);
                 handleListClientRequest();
                 isLeaderJobDone = false;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
-                    response =  getResponse(voteResult);
-                    if (response.getString("status").equals("ok")) {
+                    response = getResponse(voteResult);
+                    if (countVote == 2) {
                         isVoteDone = true;
                     }
                     sendToClient(response);
@@ -478,6 +507,34 @@ public class Server {
             } while (!isVoteDone);
         }
 
+        private void handleNightVote() throws IOException, JSONException {
+            JSONObject voteResult;
+            JSONObject response;
+            String phase = "night";
+
+            isVoteDone = false;
+            do {
+                vote(phase);
+                handleListClientRequest();
+                isLeaderJobDone = false;
+                if (clientId == leaderId) {
+                    voteResult = receiveFromClient();
+                    response = getResponse(voteResult);
+                    sendToClient(response);
+                    isLeaderJobDone = true;
+                } else {
+                    while (!isLeaderJobDone) {}
+                    handleListClientRequest();
+                }
+            } while (!isVoteDone);
+        }
+
+        /**
+         * Menangani pemberitahuan game over ke client
+         * @param winner pemenang game
+         * @throws JSONException
+         * @throws IOException
+         */
         private void announceGameOver(String winner) throws JSONException, IOException {
             JSONObject request = new JSONObject();
             JSONObject response;
@@ -609,6 +666,8 @@ public class Server {
                     case "join":
                         if (isUsernameExist(request.getString("username"))) {
                             status = "fail user exists";
+                        } else if (isGameRunning) {
+                            status = "fail game running";
                         } else {
                             status =  "ok";
                             username = request.getString("username");
@@ -625,17 +684,16 @@ public class Server {
                         status = "ok";
                         leaderId = request.getInt("kpu_id");
                         break;
-                    case "vote_werewolf":
-                        int voteStatus = request.getInt("vote_status");
-                        if (voteStatus == 1) {
-                            status = "ok";
-                            int victimId = request.getInt("player_killed");
-                            if (clientId == victimId) {
-                                isAlive = false;
-                            }
-                        } else {
-                            status = "fail";
+                    case "vote_result_civilian":
+                    case "vote_result_werewolf":
+                        status = "ok";
+                        if (clientId == request.getInt("player_killed")) {
+                            isAlive = false;
                         }
+                        isVoteDone = true;
+                        break;
+                    case "vote_result":
+                        status = "ok";
                         break;
                 }
             } else {
