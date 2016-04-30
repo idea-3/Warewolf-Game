@@ -1,5 +1,8 @@
 package com.idea.connection;
 
+import com.sun.deploy.util.SessionState;
+import com.sun.scenario.effect.impl.sw.java.JSWInvertMaskPeer;
+import com.sun.xml.internal.bind.v2.runtime.unmarshaller.XsiNilLoader;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -131,7 +134,10 @@ public class Client {
         commands.put("accept_me_leader", "I am a leader (accept)...");
         commands.put("accept_proposal_server", "Send leader information to server...");
         commands.put("vote_werewolf", "Who do you want to kill?");
+        commands.put("vote_werewolf_not_success", "Vote werewolf is not success");
+        commands.put("count_vote", "Counting vote from other players...");
         commands.put("vote_civilian", "Who do you want to kill?");
+        commands.put("vote_civilian_not_success", "Vote civilian is not success");
         commands.put("start_game", "Game is starting...");
         commands.put("change_phase", "Phase change...");
         commands.put("game_over", "Game over! The winner is ");
@@ -525,6 +531,7 @@ public class Client {
         while (i<clientsInfo.size() && !isFound) {
             ClientInfo clientInfo = clientsInfo.get(i);
             if (clientInfo.getAddress().equals(address) && clientInfo.getPort()==port) {
+                clientId = i;
                 isFound = true;
             } else {
                 i++;
@@ -658,7 +665,7 @@ public class Client {
             JSONObject request = requestVoteWerewolf(clientId);
             sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
 
-            JSONObject response = receiveFromServer();
+            JSONObject response = getData(receiveFromClient());
             System.out.println(response.getString("description"));
             String status =  response.getString("status");
             switch (status) {
@@ -712,13 +719,76 @@ public class Client {
         return request;
     }
 
-    private void voteResultWerewolf() {
-        // TODO: Vote result werewolf
-        // Vote for itself
+    /**
+     * Leader melakukan vote ke data pada dirinya sendiri, menunggu voting dari client lain,
+     * menghitung vote dan mengirimkan hasil rekapitulasi vote ke server
+     * @throws JSONException
+     * @throws IOException
+     */
+    private void voteResultWerewolf() throws JSONException, IOException {
+        int voteSequence = 0;
+        boolean isSuccess = false;
+        do {
+            // Vote for itself
+            System.out.println(commands.get("vote_werewolf"));
+            String werewolfUsername = scan.nextLine();
 
-        // Waiting others to vote
-        // Count vote
-        System.out.println(commands.get("count_vote"));
+            int clientIdVoted = getClientIdByUsername(werewolfUsername);
+
+            // Waiting others to vote
+            int votedClientNum = 0;
+            while (votedClientNum < getAliveClientsNum()-1) {
+                JSONObject voteRequest = getData(receiveFromClient());
+                handleClientVote(voteRequest);
+            }
+
+            // Count vote
+            System.out.println(commands.get("count_vote"));
+            handleClientsVote();
+            emptyClientsInfoVoteNum();
+        } while (!isSuccess && voteSequence<2);
+    }
+
+    private void handleClientsVote() {
+        // TODO: data semua vote dan masukkan kirim ke requestVoteResultWerewolf
+    }
+
+    private void handleClientVote(JSONObject voteRequest) throws JSONException, IOException {
+        int voteId = voteRequest.getInt("player_id");
+        int clientIdx = getIdxInClientsInfo(voteId);
+        JSONObject response;
+
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "player_id"));
+        if (isRequestKeyValid(keys, voteRequest)) {
+            int voteNum = clientsInfo.get(clientIdx).getVoteNum();
+            clientsInfo.get(clientIdx).setVoteNum(voteNum+1);
+
+            response = packResponse("ok", "Kill werewolf");
+        } else {
+            response = packResponse("error", "Kill werewolf");
+        }
+        sendToClient(response, clientsInfo.get(clientIdx).getAddress(), clientsInfo.get(clientIdx).getPort());
+    }
+
+    private void emptyClientsInfoVoteNum() {
+        for (int i=0; i<clientsInfo.size(); i++) {
+            clientsInfo.get(i).setVoteNum(0);
+        }
+    }
+
+    /**
+     * Menghitung jumlah client yang masih hidup pada seluruh client
+     * @return jumlah client yang masih hidup
+     */
+    private int getAliveClientsNum() {
+        int aliveClientsNum = 0;
+        for (int i=0; i<clientsInfo.size(); i++) {
+            ClientInfo clientInfo = clientsInfo.get(i);
+            if (clientInfo.isAlive() == true) {
+                aliveClientsNum++;
+            }
+        }
+        return aliveClientsNum;
     }
 
     /**
@@ -793,8 +863,28 @@ public class Client {
         return request;
     }
 
-    private void voteResultCivilian() {
-        // TODO: Vote result civilian
+    private void voteResultCivilian() throws IOException, JSONException {
+        int voteSequence = 0;
+        boolean isSuccess = false;
+        do {
+            // Vote for itself
+            System.out.println(commands.get("vote_civilian"));
+            String werewolfUsername = scan.nextLine();
+
+            int clientIdVoted = getClientIdByUsername(werewolfUsername);
+
+            // Waiting others to vote
+            int votedClientNum = 0;
+            while (votedClientNum < getAliveClientsNum()-1) {
+                JSONObject voteRequest = getData(receiveFromClient());
+                handleClientVote(voteRequest);
+            }
+
+            // Count vote
+            System.out.println(commands.get("count_vote"));
+            handleClientsVote();
+            emptyClientsInfoVoteNum();
+        } while (!isSuccess && voteSequence<2);
     }
 
     /**
@@ -824,7 +914,7 @@ public class Client {
         return request;
     }
 
-    JSONObject packResponse(String status, String method) throws JSONException {
+    private JSONObject packResponse(String status, String method) throws JSONException {
         JSONObject response = new JSONObject();
         response.put("status", status);
         switch (status) {
