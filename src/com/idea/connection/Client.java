@@ -27,12 +27,14 @@ public class Client {
     private Scanner scan;
 
     private int id;
-    private int proposalId;
+    private int sequenceId;
     private int leaderId;
     private String role;
     private boolean isProposer;
+    private boolean isPreparedPropeser;
     private boolean isLeader;
     private boolean isAlive;
+    private boolean isGameOver;
     private String username;
     private HashMap<Integer, ClientInfo> clientsInfo;
 
@@ -49,11 +51,12 @@ public class Client {
         tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
 
-        proposalId = 0;
+        sequenceId = 0;
         leaderId = -1;
         role = "";
         isProposer = false;
         isLeader = false;
+        isGameOver = false;
     }
 
     /**
@@ -165,11 +168,27 @@ public class Client {
         joinGame();
         readyUp();
         startGame();
-        changePhase();
 
-        while (!isGameOver()) {
-            prepareProposalToClient();
-            acceptProposalToClient();
+        while (!isGameOver) {
+            // Pemilihan leader
+            askClientList();
+            setIsProposer();
+            isLeader = false;
+            isPreparedPropeser = false;
+            if (isProposer) {
+                prepareProposalToClient();
+                if (isPreparedPropeser) {
+                    acceptProposalToClient();
+                }
+            } else {
+                // Menerima proposal
+
+
+            }
+
+            // Voting siapa yang akan dibunuh
+
+
         }
 
 //        if (id == 0) {
@@ -455,6 +474,56 @@ public class Client {
         return request;
     }
 
+    private void receivedProposal() throws IOException, JSONException {
+        DatagramPacket datagramPacket= receiveFromClient();
+        JSONObject request = getData(datagramPacket);
+        JSONObject response = new JSONObject();
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id"));
+        if (isRequestKeyValid(keys, request)) {
+            JSONArray proposalId = request.getJSONArray("proposal_id");
+            if (sequenceId == 0) {
+                response.put("status", "ok");
+                response.put("description", "accepted");
+
+                sequenceId = proposalId.getInt(0);
+            } else if (sequenceId < proposalId.getInt(0)) {
+                response.put("status", "ok");
+                response.put("description", "accepted");
+                response.put("previous_accepted", leaderId);
+
+                sequenceId = proposalId.getInt(0);
+            } else if (sequenceId > proposalId.getInt(0)){
+                response.put("status", "fail");
+                response.put("description", "rejected");
+            } else if (sequenceId == proposalId.getInt(0)) {
+                if (id < proposalId.getInt(1)) {
+                    response.put("status", "ok");
+                    response.put("description", "accepted");
+                    response.put("previous_accepted", leaderId);
+
+                } else if (id > proposalId.getInt(0)){
+                    response.put("status", "fail");
+                    response.put("description", "rejected");
+                }
+            }
+        } else {
+            response = packResponse("error", request.getString("method"));
+        }
+        sendToClient(response, datagramPacket.getAddress(), datagramPacket.getPort());
+    }
+
+    private void setIsProposer() {
+        ArrayList<Integer> proposerClientId = getProposer();
+        for (int i=0; i<proposerClientId.size(); i++) {
+            int clientId = proposerClientId.get(i);
+            if (clientId == id) {
+                isProposer = true;
+            } else {
+                isProposer = false;
+            }
+        }
+    }
+
     /**
      * Mengirimkan proposal dari proposer ke acceptor
      * @throws JSONException
@@ -466,12 +535,14 @@ public class Client {
         ArrayList<Integer> proposerClientId = getProposer();
         for (int i=0; i<proposerClientId.size(); i++) {
             int clientId = proposerClientId.get(i);
-            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            if (clientId != id) {
+                sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            }
         }
 
         int receivedPacket = 0;
         int okProposal = 0;
-        while (receivedPacket < getAliveClientsNum()-1) {
+        while (receivedPacket < getAliveClientsNum()-2) {
             // Menunggu paket sampai seluruh acceptor mengirim response
             DatagramPacket packet = receiveFromClient();
             JSONObject response = getData(packet);
@@ -481,11 +552,14 @@ public class Client {
             String description = response.getString("description");
             if (!status.equals("error")) {
                 System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
-            } else {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
                 if (status.equals("ok")) {
                     okProposal++;
+                } else {
+                    isPreparedPropeser = false;
                 }
+            } else {
+                isPreparedPropeser = false;
+                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
             }
             if (okProposal == receivedPacket) {
                 isLeader = true;
@@ -561,12 +635,14 @@ public class Client {
         ArrayList<Integer> proposerClientId = getProposer();
         for (int i=0; i<proposerClientId.size(); i++) {
             int clientId = proposerClientId.get(i);
-            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            if (clientId != id) {
+                sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            }
         }
 
         int receivedPacket = 0;
         int okProposal = 0;
-        while (receivedPacket < getAliveClientsNum()-1) {
+        while (receivedPacket < getAliveClientsNum()-2) {
             // Menunggu paket sampai seluruh acceptor mengirim response
             DatagramPacket packet = receiveFromClient();
             JSONObject response = getData(packet);
@@ -576,11 +652,11 @@ public class Client {
             String description = response.getString("description");
             if (!status.equals("error")) {
                 System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
-            } else {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
                 if (status.equals("ok")) {
                     okProposal++;
                 }
+            } else {
+                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
             }
             if (okProposal == receivedPacket) {
                 isLeader = true;
@@ -598,7 +674,7 @@ public class Client {
         JSONObject request = new JSONObject();
         request.put("method", "accept_proposal");
         request.put("proposal_id", getProposalId());
-        request.put("kpu_id", proposalId); // TODO: kpu_id
+        request.put("kpu_id", sequenceId); // TODO: kpu_id
 
         return request;
     }
@@ -1058,11 +1134,10 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private boolean isGameOver() throws IOException, JSONException {
+    private void gameOver() throws IOException, JSONException {
         JSONObject request = receiveFromServer();
         JSONObject response;
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "winner", "description"));
-        boolean isGameOver;
 
         if (isRequestKeyValid(keys, request)) {
             response = packResponse("ok", request.getString("method"));
@@ -1071,15 +1146,11 @@ public class Client {
             System.out.print(commands.get("game_over"));
             System.out.println(request.getString("winner"));
 
-            isGameOver = true;
-
             //TODO: check when game over is failed
         } else {
             response = packResponse("error", request.getString("method"));
-            isGameOver = false;
         }
         sendToServer(response);
-        return isGameOver;
     }
 
     /**
@@ -1088,8 +1159,8 @@ public class Client {
      */
     private JSONArray getProposalId() {
         JSONArray proposalIdArray = new JSONArray();
-        proposalId += 1;
-        proposalIdArray.put(proposalId);
+        sequenceId += 1;
+        proposalIdArray.put(sequenceId);
         proposalIdArray.put(id);
 
         return proposalIdArray;
