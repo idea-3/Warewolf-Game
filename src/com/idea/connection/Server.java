@@ -329,6 +329,7 @@ public class Server {
                     isGameRunning = true;
 
                     do {
+                        handleListClientRequest();
                         setProposer();
                         if (!isProposer) {
                             acceptLeader();

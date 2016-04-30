@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import javax.xml.crypto.Data;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -31,9 +32,11 @@ public class Client {
     private int id;
     private int sequenceId;
     private int leaderId;
+    private int countReceiveProposal;
+    private int[] promise = {0, -1};
     private String role;
     private boolean isProposer;
-    private boolean isPreparedPropeser;
+    private boolean isPreparedProposer;
     private boolean isLeader;
     private boolean isAlive;
     private boolean isGameOver;
@@ -176,16 +179,25 @@ public class Client {
             askClientList();
             setIsProposer();
             isLeader = false;
-            isPreparedPropeser = false;
+            isPreparedProposer = false;
+            promise[0] = 0;
+            promise[1] = -1;
             if (isProposer) {
                 prepareProposalToClient();
-                if (isPreparedPropeser) {
+                if (isPreparedProposer) {
                     acceptProposalToClient();
                 }
             } else {
                 // Menerima proposal
-
-
+                countReceiveProposal = 4;
+                do {
+                    DatagramPacket datagramPacket = receiveFromClient();
+                    if (getData(datagramPacket).getString("method").equals("prepare_proposal")) {
+                        receivedProposal(datagramPacket);
+                    } else if (getData(datagramPacket).getString("method").equals("accept_proposal")) {
+                        receiveAcceptProposal(datagramPacket);
+                    }
+                } while (countReceiveProposal > 0);
             }
 
             // Voting siapa yang akan dibunuh
@@ -481,41 +493,78 @@ public class Client {
         return request;
     }
 
-    private void receivedProposal() throws IOException, JSONException {
-        DatagramPacket datagramPacket= receiveFromClient();
+    private void receivedProposal(DatagramPacket datagramPacket) throws IOException, JSONException {
         JSONObject request = getData(datagramPacket);
         JSONObject response = new JSONObject();
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id"));
         if (isRequestKeyValid(keys, request)) {
             JSONArray proposalId = request.getJSONArray("proposal_id");
-            if (sequenceId == 0) {
+            if (promise[0] == 0) {
                 response.put("status", "ok");
                 response.put("description", "accepted");
 
-                sequenceId = proposalId.getInt(0);
-            } else if (sequenceId < proposalId.getInt(0)) {
+                promise[0] = proposalId.getInt(0);
+                promise[1] = proposalId.getInt(1);
+            } else if (promise[0] < proposalId.getInt(0)) {
                 response.put("status", "ok");
                 response.put("description", "accepted");
                 response.put("previous_accepted", leaderId);
 
-                sequenceId = proposalId.getInt(0);
-            } else if (sequenceId > proposalId.getInt(0)){
+                promise[0] = proposalId.getInt(0);
+                promise[1] = proposalId.getInt(1);
+            } else if (promise[0] > proposalId.getInt(0)){
                 response.put("status", "fail");
                 response.put("description", "rejected");
-            } else if (sequenceId == proposalId.getInt(0)) {
-                if (id < proposalId.getInt(1)) {
+
+                countReceiveProposal--;
+            } else if (promise[0] == proposalId.getInt(0)) {
+                if (promise[1] < proposalId.getInt(1)) {
                     response.put("status", "ok");
                     response.put("description", "accepted");
                     response.put("previous_accepted", leaderId);
 
-                } else if (id > proposalId.getInt(0)){
+                    promise[1] = proposalId.getInt(1);
+                } else if (promise[1] > proposalId.getInt(0)){
                     response.put("status", "fail");
                     response.put("description", "rejected");
+
+                    countReceiveProposal--;
                 }
             }
         } else {
             response = packResponse("error", request.getString("method"));
         }
+        countReceiveProposal--;
+        sendToClient(response, datagramPacket.getAddress(), datagramPacket.getPort());
+    }
+
+    private void receiveAcceptProposal(DatagramPacket datagramPacket) throws IOException, JSONException {
+        JSONObject request = getData(datagramPacket);
+        JSONObject response = new JSONObject();
+
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id", "kpu_id"));
+        if (isRequestKeyValid(keys, request)) {
+            JSONArray proposalId = request.getJSONArray("proposal_id");
+            if (promise[0] > proposalId.getInt(0)){
+                response.put("status", "fail");
+                response.put("description", "rejected");
+            } else if (promise[0] == proposalId.getInt(0)) {
+                if (promise[1] == proposalId.getInt(1)) {
+                    response.put("status", "ok");
+                    response.put("description", "accepted");
+
+                    promise[1] = proposalId.getInt(1);
+                } else if (promise[1] > proposalId.getInt(0)){
+                    response.put("status", "fail");
+                    response.put("description", "rejected");
+
+                    countReceiveProposal--;
+                }
+            }
+        } else {
+            response = packResponse("error", request.getString("method"));
+        }
+        countReceiveProposal--;
         sendToClient(response, datagramPacket.getAddress(), datagramPacket.getPort());
     }
 
@@ -562,10 +611,10 @@ public class Client {
                 if (status.equals("ok")) {
                     okProposal++;
                 } else {
-                    isPreparedPropeser = false;
+                    isPreparedProposer = false;
                 }
             } else {
-                isPreparedPropeser = false;
+                isPreparedProposer = false;
                 System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
             }
             if (okProposal == receivedPacket) {
