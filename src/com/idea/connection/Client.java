@@ -275,8 +275,7 @@ public class Client {
         boolean isValid = false;
         do {
             System.out.print(commands.get("username"));
-            //username = scan.nextLine();
-            username = "devina";
+            username = scan.nextLine();
 
             JSONObject request = requestJoinGame(username);
             sendToServer(request);
@@ -941,6 +940,7 @@ public class Client {
                 if (request.isNull(key)) {
                     return false;
                 }
+                i++;
             }
             return true;
         } else {
@@ -1045,17 +1045,17 @@ public class Client {
     public static void main(String[] args) throws IOException, JSONException {
         Scanner scan = new Scanner(System.in);
 
-//        System.out.print("Input server IP host name: ");
-//        String hostName = scan.nextLine();
-//        System.out.print("Input server port: ");
-//        int port = Integer.parseInt(scan.nextLine());
-//        System.out.print("Input UDP port: ");
-//        int udpPort = Integer.parseInt(scan.nextLine());
-//        System.out.println(InetAddress.getLocalHost().getHostAddress());
+        System.out.print("Input server IP host name: ");
+        String hostName = scan.nextLine();
+        System.out.print("Input server port: ");
+        int port = Integer.parseInt(scan.nextLine());
+        System.out.print("Input UDP port: ");
+        int udpPort = Integer.parseInt(scan.nextLine());
+        System.out.println(InetAddress.getLocalHost().getHostAddress());
 
-        String hostName = "10.5.24.104";
-        int port = 8080;
-        int udpPort = 8000;
+//        String hostName = "10.5.24.104";
+//        int port = 8080;
+//        int udpPort = 8000;
 
         System.out.println("Connecting to " + hostName + " on port " + port);
         Client client = new Client(hostName, port, udpPort);
