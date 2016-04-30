@@ -11,6 +11,7 @@ public class ClientInfo {
     private InetAddress address;
     private int port;
     private String username;
+    private int voteNum;
 
     public ClientInfo(int playerId, boolean isAlive, InetAddress address, int port, String username) {
         this.playerId = playerId;
@@ -18,6 +19,7 @@ public class ClientInfo {
         this.address = address;
         this.port = port;
         this.username = username;
+        this.voteNum = 0;
     }
 
     public int getPlayerId() {
@@ -40,6 +42,10 @@ public class ClientInfo {
         return username;
     }
 
+    public int getVoteNum() {
+        return voteNum;
+    }
+
     public void setPlayerId(int playerId) {
         this.playerId = playerId;
     }
@@ -58,6 +64,10 @@ public class ClientInfo {
 
     public void setUsername(String username) {
         this.username = username;
+    }
+
+    public void setVoteNum(int voteNum) {
+        this.voteNum = voteNum;
     }
 
     public void set(int playerId, boolean isAlive, InetAddress address, int port, String username) {
