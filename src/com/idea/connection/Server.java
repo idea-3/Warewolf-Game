@@ -20,7 +20,7 @@ import java.util.*;
 public class Server {
     private ArrayList<ClientController> clients;
     private boolean isDecideRoleDone;
-    private boolean isGamePlaying;
+    private boolean isGameRunning = false;
     private boolean isLeaderJobDone;
     private boolean isVoteDone;
     private int leaderId = -1;
@@ -315,17 +315,22 @@ public class Server {
                         while (!isDecideRoleDone) {}
                     }
                     startGame();
+                    isGameRunning = true;
 
-                    setProposer();
-                    if (!isProposer) {
-                        acceptLeader();
-                    }
-                    handleVote("day");
+                    do {
+                        setProposer();
+                        if (!isProposer) {
+                            acceptLeader();
+                        }
+                        handleDayVote();
 
-                    changePhase("night", nightNarration);
-                    handleVote("night");
+                        changePhase("night", nightNarration);
+                        handleNightVote();
 
-                    changePhase("day", dayNarration);
+                        changePhase("day", dayNarration);
+                    } while (!isGameOver());
+                    isGameRunning = false;
+                    announceGameOver(lastWinner);
                 } catch (SocketException e) {
                     e.printStackTrace();
                     clients.remove(this);
@@ -454,19 +459,22 @@ public class Server {
          * @throws IOException
          * @throws JSONException
          */
-        private void handleVote(String phase) throws IOException, JSONException {
+        private void handleDayVote() throws IOException, JSONException {
+            int countVote = 0;
             JSONObject voteResult;
             JSONObject response;
+            String phase = "day";
 
             isVoteDone = false;
             do {
+                countVote++;
                 vote(phase);
                 handleListClientRequest();
                 isLeaderJobDone = false;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
-                    response =  getResponse(voteResult);
-                    if (response.getString("status").equals("ok")) {
+                    response = getResponse(voteResult);
+                    if (countVote == 2) {
                         isVoteDone = true;
                     }
                     sendToClient(response);
@@ -478,6 +486,34 @@ public class Server {
             } while (!isVoteDone);
         }
 
+        private void handleNightVote() throws IOException, JSONException {
+            JSONObject voteResult;
+            JSONObject response;
+            String phase = "night";
+
+            isVoteDone = false;
+            do {
+                vote(phase);
+                handleListClientRequest();
+                isLeaderJobDone = false;
+                if (clientId == leaderId) {
+                    voteResult = receiveFromClient();
+                    response = getResponse(voteResult);
+                    sendToClient(response);
+                    isLeaderJobDone = true;
+                } else {
+                    while (!isLeaderJobDone) {}
+                    handleListClientRequest();
+                }
+            } while (!isVoteDone);
+        }
+
+        /**
+         * Menangani pemberitahuan game over ke client
+         * @param winner pemenang game
+         * @throws JSONException
+         * @throws IOException
+         */
         private void announceGameOver(String winner) throws JSONException, IOException {
             JSONObject request = new JSONObject();
             JSONObject response;
@@ -609,6 +645,8 @@ public class Server {
                     case "join":
                         if (isUsernameExist(request.getString("username"))) {
                             status = "fail user exists";
+                        } else if (isGameRunning) {
+                            status = "fail game running";
                         } else {
                             status =  "ok";
                             username = request.getString("username");
@@ -625,17 +663,16 @@ public class Server {
                         status = "ok";
                         leaderId = request.getInt("kpu_id");
                         break;
-                    case "vote_werewolf":
-                        int voteStatus = request.getInt("vote_status");
-                        if (voteStatus == 1) {
-                            status = "ok";
-                            int victimId = request.getInt("player_killed");
-                            if (clientId == victimId) {
-                                isAlive = false;
-                            }
-                        } else {
-                            status = "fail";
+                    case "vote_result_civilian":
+                    case "vote_result_werewolf":
+                        status = "ok";
+                        if (clientId == request.getInt("player_killed")) {
+                            isAlive = false;
                         }
+                        isVoteDone = true;
+                        break;
+                    case "vote_result":
+                        status = "ok";
                         break;
                 }
             } else {
