@@ -36,7 +36,7 @@ public class Client {
     private boolean isLeader;
     private boolean isAlive;
     private String username;
-    private List<ClientInfo> clientsInfo;
+    private HashMap<Integer, ClientInfo> clientsInfo;
 
     /**
      * Konstruktor
@@ -429,40 +429,15 @@ public class Client {
                 String username = client.getString("username");
 
                 // Memeriksa keberadaan client di clientsInfo
-                int idInClientsInfo = getIdxInClientsInfo(clientId);
-                if (idInClientsInfo == -1) {
-                    clientsInfo.add(new ClientInfo(clientId, isAlive, address, port, username));
+                if (clientsInfo.get(clientId) == null) {
+                    clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username));
                 } else {
-                    if (clientsInfo.get(idInClientsInfo).isAlive() != isAlive) {
-                        clientsInfo.get(idInClientsInfo).set(clientId, isAlive, address, port, username);
+                    if (clientsInfo.get(clientId).isAlive() != isAlive) {
+                        clientsInfo.get(clientId).setAlive(isAlive);
                         System.out.println("Player " + clientId + " is dead.");
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * Memeriksa apakah ID client pada parameter terdapat pada clientsInfo pada atribut
-     * @param clientId yang ingin dibandingkan
-     * @return indeks keberadaan ClientInfo yang dicari, bernilai -1 apabila tidak ditemukan
-     */
-    private int getIdxInClientsInfo(int clientId) {
-        int i = 0;
-        boolean isExist = false;
-        while (i<clientsInfo.size() && !isExist) {
-            ClientInfo clientInfo = clientsInfo.get(i);
-            if (clientInfo.getPlayerId()==clientId) {
-                isExist = true;
-            } else {
-                i++;
-            }
-        }
-
-        if (!isExist) {
-            return -1;
-        } else {
-            return i;
         }
     }
 
@@ -486,14 +461,13 @@ public class Client {
     private void prepareProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("prepare_proposal_client"));
         JSONObject request = requestPrepareProposalToClient();
-        for (int i=0; i<clientsInfo.size(); i++) {
-            InetAddress address = clientsInfo.get(i).getAddress();
-            int port = clientsInfo.get(i).getPort();
-            sendToClient(request, address, port);
+        for (Map.Entry<Integer, ClientInfo> entry : clientsInfo.entrySet()) {
+            ClientInfo clientInfo = entry.getValue();
+            sendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
         }
         int receivedPacket = 0;
         int okProposal = 0;
-        while (receivedPacket < clientsInfo.size()-1) {
+        while (receivedPacket < getAliveClientsNum()-1) {
             // Menunggu paket sampai seluruh acceptor mengirim response
             DatagramPacket packet = receiveFromClient();
             JSONObject response = getData(packet);
@@ -524,19 +498,17 @@ public class Client {
      * @return ID client yang ditemukan, bernilai -1 jika tidak ditemukan
      */
     private int getClientIdByAddress(InetAddress address, int port) {
-        int clientId = 0;
-        int i = 0;
+        Integer clientId = 0;
         boolean isFound = false;
-        while (i<clientsInfo.size() && !isFound) {
-            ClientInfo clientInfo = clientsInfo.get(i);
+        Iterator entries = clientsInfo.entrySet().iterator();
+        while (entries.hasNext() && !isFound) {
+            Map.Entry entry = (Map.Entry) entries.next();
+            clientId = (Integer) entry.getKey();
+            ClientInfo clientInfo = (ClientInfo) entry.getValue();
             if (clientInfo.getAddress().equals(address) && clientInfo.getPort()==port) {
-                clientId = i;
                 isFound = true;
-            } else {
-                i++;
             }
         }
-
         if (isFound) {
             return clientId;
         } else {
@@ -565,14 +537,13 @@ public class Client {
     private void acceptProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("accept_proposal_client"));
         JSONObject request = requestAcceptProposal();
-        for (int i=0; i<clientsInfo.size(); i++) {
-            InetAddress address = clientsInfo.get(i).getAddress();
-            int port = clientsInfo.get(i).getPort();
-            sendToClient(request, address, port);
+        for (Map.Entry<Integer, ClientInfo> entry : clientsInfo.entrySet()) {
+            ClientInfo clientInfo = entry.getValue();
+            sendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
         }
         int receivedPacket = 0;
         int okProposal = 0;
-        while (receivedPacket < clientsInfo.size()-1) {
+        while (receivedPacket < getAliveClientsNum()-1) {
             // Menunggu paket sampai seluruh acceptor mengirim response
             DatagramPacket packet = receiveFromClient();
             JSONObject response = getData(packet);
@@ -685,18 +656,17 @@ public class Client {
      * @return ID client yang ditemukan, bernilai -1 jika tidak ditemukan
      */
     private int getClientIdByUsername(String username) {
-        int clientId = 0;
-        int i = 0;
+        Integer clientId = 0;
         boolean isFound = false;
-        while (i<clientsInfo.size() && !isFound) {
-            ClientInfo clientInfo = clientsInfo.get(i);
+        Iterator entries = clientsInfo.entrySet().iterator();
+        while (entries.hasNext() && !isFound) {
+            Map.Entry entry = (Map.Entry) entries.next();
+            clientId = (Integer) entry.getKey();
+            ClientInfo clientInfo = (ClientInfo) entry.getValue();
             if (clientInfo.getUsername().equals(username)) {
                 isFound = true;
-            } else {
-                i++;
             }
         }
-
         if (isFound) {
             return clientId;
         } else {
@@ -733,12 +703,15 @@ public class Client {
             String werewolfUsername = scan.nextLine();
 
             int clientIdVoted = getClientIdByUsername(werewolfUsername);
+            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+            clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
 
             // Waiting others to vote
             int votedClientNum = 0;
             while (votedClientNum < getAliveClientsNum()-1) {
                 JSONObject voteRequest = getData(receiveFromClient());
                 handleClientVote(voteRequest);
+                votedClientNum++;
             }
 
             // Count vote
@@ -754,24 +727,23 @@ public class Client {
 
     private void handleClientVote(JSONObject voteRequest) throws JSONException, IOException {
         int voteId = voteRequest.getInt("player_id");
-        int clientIdx = getIdxInClientsInfo(voteId);
         JSONObject response;
 
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "player_id"));
         if (isRequestKeyValid(keys, voteRequest)) {
-            int voteNum = clientsInfo.get(clientIdx).getVoteNum();
-            clientsInfo.get(clientIdx).setVoteNum(voteNum+1);
+            int voteNum = clientsInfo.get(voteId).getVoteNum();
+            clientsInfo.get(voteId).setVoteNum(voteNum+1);
 
             response = packResponse("ok", "Kill werewolf");
         } else {
             response = packResponse("error", "Kill werewolf");
         }
-        sendToClient(response, clientsInfo.get(clientIdx).getAddress(), clientsInfo.get(clientIdx).getPort());
+        sendToClient(response, clientsInfo.get(voteId).getAddress(), clientsInfo.get(voteId).getPort());
     }
 
     private void emptyClientsInfoVoteNum() {
-        for (int i=0; i<clientsInfo.size(); i++) {
-            clientsInfo.get(i).setVoteNum(0);
+        for (ClientInfo clientInfo : clientsInfo.values()) {
+            clientInfo.setVoteNum(0);
         }
     }
 
@@ -781,12 +753,12 @@ public class Client {
      */
     private int getAliveClientsNum() {
         int aliveClientsNum = 0;
-        for (int i=0; i<clientsInfo.size(); i++) {
-            ClientInfo clientInfo = clientsInfo.get(i);
-            if (clientInfo.isAlive() == true) {
+        for (ClientInfo clientInfo : clientsInfo.values()) {
+            if (clientInfo.isAlive()) {
                 aliveClientsNum++;
             }
         }
+
         return aliveClientsNum;
     }
 
@@ -797,16 +769,16 @@ public class Client {
      * @return objek JSON yang akan dikirim
      * @throws JSONException
      */
-    private JSONObject requestVoteResultWerewolf(HashMap<Integer, Integer> voteResult, int voteStatus, int playerKilled) throws JSONException {
+    private JSONObject requestVoteResultWerewolf(int voteStatus, int playerKilled) throws JSONException {
         JSONObject request = new JSONObject();
         request.put("method", "vote_result_werewolf");
         request.put("vote_status", voteStatus);
         request.put("player_killed", playerKilled);
 
         List<List<Integer>> voteArrays = new ArrayList<>();
-        for (Map.Entry<Integer, Integer> vote : voteResult.entrySet()) {
+        for (Map.Entry<Integer, ClientInfo> vote : clientsInfo.entrySet()) {
             Integer clientId = vote.getKey();
-            Integer voteNum = vote.getValue();
+            Integer voteNum = vote.getValue().getVoteNum();
 
             List<Integer> voteArray = new ArrayList<>();
             voteArray.add(clientId);
