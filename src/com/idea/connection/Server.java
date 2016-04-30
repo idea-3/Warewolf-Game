@@ -133,13 +133,14 @@ public class Server {
     private void decideRole() {
         int roles[] = new int[clients.size()];
         int playerId;
+        int minimumTotalWerewolf = 2;
 
         Random rand = new Random();
         double n = 0.5 * (clients.size() - 1);
-        int countWerewolf = rand.nextInt(2) + (int) n;
+        int countWerewolf = rand.nextInt(((int) n - minimumTotalWerewolf) + 1) + minimumTotalWerewolf;
         for (int i = 0; i < countWerewolf; i++) {
             do {
-                playerId = rand.nextInt(0) +  (clients.size() - 1);
+                playerId = rand.nextInt(clients.size() - 1) +  clients.get(0).clientId;
             } while(roles[playerId] == 1);
 
             roles[playerId] = 1;
@@ -149,6 +150,7 @@ public class Server {
             String role;
             if (roles[i] == 1) {
                 role = "werewolf";
+                clients.get(i).isWerewolf = true;
             } else {
                 role = "civilian";
             }
@@ -158,18 +160,25 @@ public class Server {
 
     /**
      * Mengembalikan true jika semua client telah mengirimkan request ready
+     * @return true jika semua pemain telah siap
+     * @throws InterruptedException
      */
-    public boolean isAllReady() {
-        boolean allReady = true;
-        int i = 0;
-        while ((allReady) && (i < clients.size())) {
-            if (!clients.get(i).isReady) {
-                allReady = false;
-            } else {
-                i++;
+    private boolean isAllReady() throws InterruptedException {
+        Thread.sleep(1000);
+        if (clients.size() >= 6) {
+            boolean allReady = true;
+            int i = 0;
+            while ((allReady) && (i < clients.size())) {
+                if (!clients.get(i).isReady) {
+                    allReady = false;
+                } else {
+                    i++;
+                }
             }
+            return allReady;
+        } else {
+            return false;
         }
-        return allReady;
     }
 
     /**
@@ -240,6 +249,7 @@ public class Server {
         private boolean isAlive = false;
         private boolean isProposer = false;
         private boolean isReady = false;
+        private boolean isWerewolf = false;
         private BufferedReader in;
         private int clientId;
         private int countDay = 0;
@@ -306,6 +316,7 @@ public class Server {
 
                     while (!isAllReady()) {
                         // Menunggu sampai semua client ready
+
                     }
 
                     if (clientId == clients.get(0).clientId) {
@@ -333,6 +344,8 @@ public class Server {
                     e.printStackTrace();
                 } catch (JSONException e) {
                     e.printStackTrace();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
 //                    try {
 //                        in.close();
@@ -347,6 +360,14 @@ public class Server {
             JSONObject request = new JSONObject();
             JSONObject response;
             ArrayList<String> friends = new ArrayList<>();
+
+            if (role.equals("werewolf")) {
+                for (int i = 0; i < clients.size(); i++) {
+                    if (clients.get(i).isWerewolf) {
+                        friends.add(clients.get(i).username);
+                    }
+                }
+            }
 
             request.put("method", "start");
             request.put("time", "night");

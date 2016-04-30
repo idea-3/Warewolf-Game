@@ -166,7 +166,8 @@ public class Client {
         changePhase();
 
         while (!isGameOver()) {
-
+            prepareProposalToClient();
+            acceptProposalToClient();
         }
 
 //        if (id == 0) {
