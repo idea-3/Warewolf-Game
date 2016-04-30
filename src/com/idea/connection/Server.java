@@ -20,6 +20,7 @@ import java.util.*;
 public class Server {
     private ArrayList<ClientController> clients;
     private ServerSocket serverSocket;
+    private int leaderId = -1;
     private int nextClientId = 0;
     public static final HashMap<String, List<String>> okResponseKeys = initializeOkResponseKeys();
     public static final List<String> failResponseKeys = Arrays.asList("status", "description");
@@ -55,6 +56,7 @@ public class Server {
 
         keys = Arrays.asList("status", "description");
         okResponseKeys.put("ready", keys);
+        okResponseKeys.put("accepted_proposal", keys);
         okResponseKeys.put("vote_result_werewolf", keys);
         okResponseKeys.put("vote_result_civilian", keys);
         okResponseKeys.put("vote_result", keys);
@@ -94,6 +96,9 @@ public class Server {
         descriptionResponseValues.put("ready error", "ready up error");
         descriptionResponseValues.put("client_address fail", "client list can not be received");
         descriptionResponseValues.put("client_address error", "client list error");
+        descriptionResponseValues.put("accepted_proposal ok", "");
+        descriptionResponseValues.put("accepted_proposal fail", "");
+        descriptionResponseValues.put("accepted_proposal error", "");
         descriptionResponseValues.put("vote_result_werewolf ok", "");
         descriptionResponseValues.put("vote_result ok", "");
         descriptionResponseValues.put("vote_result_werewolf fail", "");
@@ -180,8 +185,6 @@ public class Server {
         return found;
     }
 
-
-
     /**
      * Controller untuk setiap client yang terhubung dengan server
      */
@@ -261,6 +264,12 @@ public class Server {
                     String narration = "The day has came. All villagers wake up.";
                     changePhase("day", narration);
 
+                    acceptLeader();
+                    if (leaderId == clientId) {
+                        processWerewolfKilledVote();
+                    } else {
+
+                    }
 
                 } catch (SocketException e) {
                     e.printStackTrace();
@@ -334,6 +343,31 @@ public class Server {
             } while (!response.getString("status").equals("ok"));
         }
 
+        private void acceptLeader() throws IOException, JSONException {
+            JSONObject kpuInfo = receiveFromClient();
+            JSONObject response = getResponse(kpuInfo);
+            sendToClient(response);
+        }
+
+        /**
+         * Menangani proses penerimaan voting werewolf terbunuh
+         * @throws IOException
+         * @throws JSONException
+         */
+        private void processWerewolfKilledVote() throws IOException, JSONException {
+            JSONObject voteResult;
+            JSONObject response;
+            int voteStatus = -1;
+
+            do {
+                voteResult = receiveFromClient();
+                response =  getResponse(voteResult);
+                if (response.getString("status").equals("ok")) {
+                    voteStatus = 1;
+                }
+                sendToClient(response);
+            } while (voteStatus != 1);
+        }
 
         /**
          * Menentukan response server berdasarkan request client
@@ -343,18 +377,6 @@ public class Server {
             JSONObject response;
             String method = request.getString(methodKey);
             String status = getStatus(request);
-
-            if (status.equals("ok")) {
-                switch (method) {
-                    case "ready":
-                        isReady = true;
-                        break;
-                    case "join":
-                        username = request.getString("username");
-                        break;
-                }
-            }
-
             response = packResponse(method, status);
 
             return response;
@@ -456,20 +478,38 @@ public class Server {
          * @param request
          * @return status
          */
-        private String getStatus(JSONObject request) {
+        private String getStatus(JSONObject request) throws JSONException {
             String status = "";
             if (isRequestValid(request)) {
-                status =  "ok";
-            } else {
-                switch (methodKey) {
+                String method = request.getString(methodKey);
+                switch (method) {
                     case "join":
                         if (isUsernameExist(username)) {
                             status = "fail";
                         } else {
-                            status =  "error";
+                            status =  "ok";
+                            username = request.getString("username");
+                        }
+                        break;
+                    case "ready":
+                        status = "ok";
+                        isReady = true;
+                        break;
+                    case "accepted_proposal":
+                        status = "ok";
+                        leaderId = request.getInt("kpu_id");
+                        break;
+                    case "vote_werewolf":
+                        int voteStatus = request.getInt("vote_status");
+                        if (voteStatus == 1) {
+                            status = "ok";
+                        } else {
+                            status = "fail";
                         }
                         break;
                 }
+            } else {
+                status = "error";
             }
             return status;
         }
