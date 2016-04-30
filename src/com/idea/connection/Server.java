@@ -277,11 +277,7 @@ public class Server {
                     if (!isProposer) {
                         acceptLeader();
                     }
-                    if (leaderId == clientId) {
-                        handleWerewolfKilledVote();
-                    } else {
-                        handleListClientRequest();
-                    }
+                    handleWerewolfKilledVote();
 
                     changePhase("night", "The night has came. All villagers go to sleep. All werewolves wake up.");
 
@@ -396,17 +392,25 @@ public class Server {
          * @throws JSONException
          */
         private void handleWerewolfKilledVote() throws IOException, JSONException {
+            boolean isLeaderJobDone;
             JSONObject voteResult;
             JSONObject response;
             int voteStatus = -1;
 
             do {
-                voteResult = receiveFromClient();
-                response =  getResponse(voteResult);
-                if (response.getString("status").equals("ok")) {
-                    voteStatus = 1;
+                isLeaderJobDone = false;
+                if (clientId == leaderId) {
+                    voteResult = receiveFromClient();
+                    response =  getResponse(voteResult);
+                    if (response.getString("status").equals("ok")) {
+                        voteStatus = 1;
+                    }
+                    sendToClient(response);
+                    isLeaderJobDone = true;
+                } else {
+                    while (!isLeaderJobDone) {}
+                    handleListClientRequest();
                 }
-                sendToClient(response);
             } while (voteStatus != 1);
         }
 
