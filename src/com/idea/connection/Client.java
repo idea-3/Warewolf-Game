@@ -153,28 +153,37 @@ public class Client {
      * @throws IOException
      */
     public void run() throws JSONException, IOException {
+        System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
+        System.out.println("Client port: " + udpSocket.getLocalPort());
+
         joinGame();
-        if (id == 0) {
-            System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
-            System.out.println("Client port: " + udpSocket.getLocalPort());
-            while (true) {
-                DatagramPacket packet = receiveFromClient();
-                getData(packet);
-            }
-        } else {
-            JSONObject data = new JSONObject();
-            System.out.print("Input client address: ");
-            InetAddress address = InetAddress.getByName(scan.nextLine());
-            System.out.print("Input client port: ");
-            int port = Integer.parseInt(scan.nextLine());
-            data.put("client", username);
-            data.put("message", "hello");
-            sendToClient(data, address, port);
-        }
-        udpSocket.close();
-        tcpOut.close();
-        tcpIn.close();
-        tcpSocket.close();
+        readyUp();
+        startGame();
+
+
+//        if (id == 0) {
+//            System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
+//            System.out.println("Client port: " + udpSocket.getLocalPort());
+//            while (true) {
+//                DatagramPacket packet = receiveFromClient();
+//                getData(packet);
+//            }
+//        } else {
+//            JSONObject data = new JSONObject();
+//            System.out.print("Input client address: ");
+//            InetAddress address = InetAddress.getByName(scan.nextLine());
+//            System.out.print("Input client port: ");
+//            int port = Integer.parseInt(scan.nextLine());
+//            data.put("client", username);
+//            data.put("message", "hello");
+//            sendToClient(data, address, port);
+//        }
+
+
+//        udpSocket.close();
+//        tcpOut.close();
+//        tcpIn.close();
+//        tcpSocket.close();
     }
 
     /**
@@ -260,12 +269,14 @@ public class Client {
         boolean isValid = false;
         do {
             System.out.print(commands.get("username"));
-            username = scan.nextLine();
+            //username = scan.nextLine();
+            username = "devina";
 
             JSONObject request = requestJoinGame(username);
             sendToServer(request);
 
             JSONObject response = receiveFromServer();
+            System.out.println("Response from server: " + response.toString());
             String status = response.getString("status");
             switch (status) {
                 case "ok":
@@ -338,14 +349,17 @@ public class Client {
      * @throws JSONException
      */
     private void readyUp() throws IOException, JSONException {
-        System.out.println(commands.get("ready"));
-        String decision = scan.nextLine();
-        if (decision.equals(answers.get(1))) {
-            JSONObject request = new JSONObject();
-            sendToServer(request);
-            JSONObject response = receiveFromServer();
-            System.out.println(response.getString("description"));
-        }
+        String decision;
+        do {
+            System.out.println(commands.get("ready"));
+            decision = scan.nextLine();
+
+        } while (!decision.equals(answers.get(1)));
+
+        JSONObject request = requestReadyUp();
+        sendToServer(request);
+        JSONObject response = receiveFromServer();
+        System.out.println(response.getString("description"));
     }
 
     /**
@@ -941,13 +955,17 @@ public class Client {
     public static void main(String[] args) throws IOException, JSONException {
         Scanner scan = new Scanner(System.in);
 
-        System.out.print("Input server IP host name: ");
-        String hostName = scan.nextLine();
-        System.out.print("Input server port: ");
-        int port = Integer.parseInt(scan.nextLine());
-        System.out.print("Input UDP port: ");
-        int udpPort = Integer.parseInt(scan.nextLine());
-        System.out.println(InetAddress.getLocalHost().getHostAddress());
+//        System.out.print("Input server IP host name: ");
+//        String hostName = scan.nextLine();
+//        System.out.print("Input server port: ");
+//        int port = Integer.parseInt(scan.nextLine());
+//        System.out.print("Input UDP port: ");
+//        int udpPort = Integer.parseInt(scan.nextLine());
+//        System.out.println(InetAddress.getLocalHost().getHostAddress());
+
+        String hostName = "10.5.24.104";
+        int port = 8080;
+        int udpPort = 8000;
 
         System.out.println("Connecting to " + hostName + " on port " + port);
         Client client = new Client(hostName, port, udpPort);
