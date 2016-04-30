@@ -99,6 +99,7 @@ public class Server {
         descriptionResponseValues.put("ready ok", "waiting for other player to start");
         descriptionResponseValues.put("ready fail", "ready up fail");
         descriptionResponseValues.put("ready error", "ready up error");
+        descriptionResponseValues.put("client_address ok", "list of clients retrieved");
         descriptionResponseValues.put("client_address fail", "client list can not be received");
         descriptionResponseValues.put("client_address error", "client list error");
         descriptionResponseValues.put("accepted_proposal ok", "");

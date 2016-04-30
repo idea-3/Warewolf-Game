@@ -62,6 +62,7 @@ public class Client {
         isProposer = false;
         isLeader = false;
         isGameOver = false;
+        clientsInfo = new HashMap<>();
     }
 
     /**
@@ -477,14 +478,14 @@ public class Client {
             }
 
             // Memeriksa keberadaan client di clientsInfo
-            if (clientsInfo.get(clientId) == null) {
-                clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username, role));
-            } else {
+            if (clientsInfo.containsKey(clientId)) {
                 if (clientsInfo.get(clientId).isAlive() != isAlive) {
                     clientsInfo.get(clientId).setAlive(isAlive);
                     clientsInfo.get(clientId).setRole(role);
                     System.out.println("Player " + clientsInfo.get(clientId).getUsername() + " is dead.");
                 }
+            } else {
+                clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username, role));
             }
         }
     }
@@ -1310,14 +1311,14 @@ public class Client {
 //        int udpPort = 8000;
 
         System.out.print("Input server IP host name: ");
-        String hostName = scan.nextLine();
+        ///String hostName = scan.nextLine();
+        String hostName = "irn";
         System.out.print("Input server port: ");
-        int port = Integer.parseInt(scan.nextLine());
+        ///int port = Integer.parseInt(scan.nextLine());
+        int port = 2000;
         System.out.print("Input UDP port: ");
         int udpPort = Integer.parseInt(scan.nextLine());
         System.out.println(InetAddress.getLocalHost().getHostAddress());
-
-
 
         System.out.println("Connecting to " + hostName + " on port " + port);
         Client client = new Client(hostName, port, udpPort);
