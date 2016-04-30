@@ -333,6 +333,7 @@ public class Server {
                         if (!isProposer) {
                             acceptLeader();
                         }
+                        announceLeader();
                         handleDayVote();
 
                         changePhase("night", nightNarration);
@@ -473,6 +474,18 @@ public class Server {
             JSONObject kpuInfo = receiveFromClient();
             JSONObject response = getResponse(kpuInfo);
             sendToClient(response);
+        }
+
+        private void announceLeader() throws JSONException, IOException {
+            JSONObject request = new JSONObject();
+            JSONObject response;
+
+            do {
+                request.put("method", "kpu_selected");
+                request.put("kpu_id", leaderId);
+                sendToClient(request);
+                response = receiveFromClient();
+            } while (!response.getString("status").equals("ok"));
         }
 
         /**
