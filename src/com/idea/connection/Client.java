@@ -129,6 +129,9 @@ public class Client {
         commands.put("player_address_lost", "Lost a player address...");
         commands.put("prepare_me_leader", "I am a leader (propose)...");
         commands.put("accept_me_leader", "I am a leader (accept)...");
+        commands.put("accept_proposal_server", "Send leader information to server...");
+        commands.put("vote_werewolf", "Who do you want to kill?");
+        commands.put("vote_civilian", "Who do you want to kill?");
         commands.put("start_game", "Game is starting...");
         commands.put("change_phase", "Phase change...");
         commands.put("game_over", "Game over! The winner is ");
@@ -474,7 +477,7 @@ public class Client {
         while (receivedPacket < clientsInfo.size()-1) {
             // Menunggu paket sampai seluruh acceptor mengirim response
             DatagramPacket packet = receiveFromClient();
-            JSONObject response = new JSONObject(new String(packet.getData(), 0, packet.getLength()));
+            JSONObject response = getData(packet);
             System.out.println("Response converted to JSON: " + response);
 
             String status = response.getString("status");
@@ -534,6 +537,11 @@ public class Client {
         return request;
     }
 
+    /**
+     * Mengirim proposal untuk kedua kalinya ke acceptor
+     * @throws JSONException
+     * @throws IOException
+     */
     private void acceptProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("accept_proposal_client"));
         JSONObject request = requestAcceptProposal();
@@ -547,7 +555,7 @@ public class Client {
         while (receivedPacket < clientsInfo.size()-1) {
             // Menunggu paket sampai seluruh acceptor mengirim response
             DatagramPacket packet = receiveFromClient();
-            JSONObject response = new JSONObject(new String(packet.getData(), 0, packet.getLength()));
+            JSONObject response = getData(packet);
             System.out.println("Response converted to JSON: " + response);
 
             String status = response.getString("status");
@@ -581,8 +589,29 @@ public class Client {
         return request;
     }
 
-    private void acceptProposalToServer() {
+    /**
+     * Mengirimkan informasi leader dari seluruh client ke server (learner)
+     * @throws JSONException
+     * @throws IOException
+     */
+    private void acceptProposalToServer() throws JSONException, IOException {
+        boolean isSuccess = true;
+        do {
+            System.out.println(commands.get("accept_proposal_server"));
+            JSONObject request = requestAcceptProposalToServer();
+            sendToServer(request);
 
+            JSONObject response = receiveFromServer();
+            String status =  response.getString("status");
+            switch (status) {
+                case "ok":
+                    System.out.println(response.getString("description"));
+                    break;
+                default:
+                    isSuccess = false;
+                    break;
+            }
+        } while (!isSuccess);
     }
 
     /**
@@ -600,6 +629,62 @@ public class Client {
     }
 
     /**
+     * Melakukan voting untuk membunuh werewolf
+     * @throws JSONException
+     * @throws IOException
+     */
+    private void voteWerewolf() throws JSONException, IOException {
+        int voteSequence = 0;
+        boolean isSuccess = false;
+        do {
+            System.out.println(commands.get("vote_werewolf"));
+            String werewolfUsername = scan.nextLine();
+
+            int clientId = getClientIdByUsername(werewolfUsername);
+            JSONObject request = requestVoteWerewolf(clientId);
+            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+
+            JSONObject response = receiveFromServer();
+            System.out.println(response.getString("description"));
+            String status =  response.getString("status");
+            switch (status) {
+                case "ok":
+                    isSuccess = true;
+                    break;
+                default:
+                    System.out.println(commands.get("vote_werewolf_not_success"));
+                    voteSequence++;
+                    break;
+            }
+        } while (!isSuccess && voteSequence<2);
+    }
+
+    /**
+     * Mencari client dengan username dari parameter pada list clientsInfo
+     * @param username username yang ingin dicari pada clientsInfo
+     * @return ID client yang ditemukan, bernilai -1 jika tidak ditemukan
+     */
+    private int getClientIdByUsername(String username) {
+        int clientId = 0;
+        int i = 0;
+        boolean isFound = false;
+        while (i<clientsInfo.size() && !isFound) {
+            ClientInfo clientInfo = clientsInfo.get(i);
+            if (clientInfo.getUsername().equals(username)) {
+                isFound = true;
+            } else {
+                i++;
+            }
+        }
+
+        if (isFound) {
+            return clientId;
+        } else {
+            return -1;
+        }
+    }
+
+    /**
      * Menyusun JSON untuk request mengirimkan vote untuk membunuh werewolf ke leader
      * @param werewolfId ID werewolf yang ingin dibunuh
      * @return objek JSON yang akan dikirim
@@ -611,6 +696,15 @@ public class Client {
         request.put("player_id", werewolfId);
 
         return request;
+    }
+
+    private void voteResultWerewolf() {
+        // TODO: Vote result werewolf
+        // Vote for itself
+
+        // Waiting others to vote
+        // Count vote
+        System.out.println(commands.get("count_vote"));
     }
 
     /**
@@ -641,6 +735,37 @@ public class Client {
     }
 
     /**
+     * Melakukan voting untuk membunuh civilian
+     * @throws JSONException
+     * @throws IOException
+     */
+    private void voteCivilian() throws JSONException, IOException {
+        int voteSequence = 0;
+        boolean isSuccess = false;
+        do {
+            System.out.println(commands.get("vote_civilian"));
+            String civilianUsername = scan.nextLine();
+
+            int clientId = getClientIdByUsername(civilianUsername);
+            JSONObject request = requestVoteWerewolf(clientId);
+            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+
+            JSONObject response = receiveFromServer();
+            System.out.println(response.getString("description"));
+            String status =  response.getString("status");
+            switch (status) {
+                case "ok":
+                    isSuccess = true;
+                    break;
+                default:
+                    System.out.println(commands.get("vote_civilian_not_success"));
+                    voteSequence++;
+                    break;
+            }
+        } while (!isSuccess && voteSequence<2);
+    }
+
+    /**
      * Menyusun JSON untuk request mengirimkan vote untuk membunuh civilian ke leader
      * @param civilianId ID civilian yang ingin dibunuh
      * @return objek JSON yang akan dikirim
@@ -652,6 +777,10 @@ public class Client {
         request.put("player_id", civilianId);
 
         return request;
+    }
+
+    private void voteResultCivilian() {
+        // TODO: Vote result civilian
     }
 
     /**
