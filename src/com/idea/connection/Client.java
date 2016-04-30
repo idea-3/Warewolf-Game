@@ -1295,14 +1295,14 @@ public class Client {
     public static void main(String[] args) throws IOException, JSONException {
         Scanner scan = new Scanner(System.in);
 
-        String hostName = "10.5.24.104";
-        int port = 8080;
+//        String hostName = "10.5.24.104";
+//        int port = 8080;
 //        int udpPort = 8000;
 
-//        System.out.print("Input server IP host name: ");
-//        String hostName = scan.nextLine();
-//        System.out.print("Input server port: ");
-//        int port = Integer.parseInt(scan.nextLine());
+        System.out.print("Input server IP host name: ");
+        String hostName = scan.nextLine();
+        System.out.print("Input server port: ");
+        int port = Integer.parseInt(scan.nextLine());
         System.out.print("Input UDP port: ");
         int udpPort = Integer.parseInt(scan.nextLine());
         System.out.println(InetAddress.getLocalHost().getHostAddress());
