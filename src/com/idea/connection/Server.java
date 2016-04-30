@@ -189,15 +189,16 @@ public class Server {
      * Controller untuk setiap client yang terhubung dengan server
      */
     private class ClientController extends Thread {
-        private int clientId;
+        private boolean isAlive = false;
+        private boolean isProposer = false;
+        private boolean isReady = false;
         private BufferedReader in;
+        private int clientId;
+        private int countDay = 0;
         private PrintWriter out;
         private Socket clientSocket;
-        private String username;
-        private boolean isAlive;
-        private boolean isReady = false;
         private String role;
-        private int countDay = 0;
+        private String username;
 
         /**
          * Konstruktor
@@ -208,6 +209,14 @@ public class Server {
             this.clientSocket = clientSocket;
             in = new BufferedReader(new InputStreamReader(this.clientSocket.getInputStream()));
             out = new PrintWriter(this.clientSocket.getOutputStream(), true);
+        }
+
+        /**
+         * Getter atribut clientId
+         * @return atribut clientId
+         */
+        public int getClientId() {
+            return clientId;
         }
 
         public void setRole(String role) {
@@ -264,7 +273,10 @@ public class Server {
                     String narration = "The day has came. All villagers wake up.";
                     changePhase("day", narration);
 
-                    acceptLeader();
+                    setProposer();
+                    if (!isProposer) {
+                        acceptLeader();
+                    }
                     if (leaderId == clientId) {
                         processWerewolfKilledVote();
                     } else {
@@ -312,7 +324,7 @@ public class Server {
                         break;
                 }
             } while (!response.getString("status").equals("ok"));
-
+            isAlive = true;
         }
 
         private void changePhase(String time, String narration) throws JSONException, IOException {
@@ -343,6 +355,19 @@ public class Server {
             } while (!response.getString("status").equals("ok"));
         }
 
+        private void setProposer() {
+            if (isProposer(clientId)) {
+                isProposer = true;
+            } else {
+                isProposer = false;
+            }
+        }
+
+        /**
+         * Menangani proposal dari client (acceptor) mengenai leader yang terpilih
+         * @throws IOException
+         * @throws JSONException
+         */
         private void acceptLeader() throws IOException, JSONException {
             JSONObject kpuInfo = receiveFromClient();
             JSONObject response = getResponse(kpuInfo);
@@ -503,6 +528,10 @@ public class Server {
                         int voteStatus = request.getInt("vote_status");
                         if (voteStatus == 1) {
                             status = "ok";
+                            int victimId = request.getInt("player_killed");
+                            if (clientId == victimId) {
+                                isAlive = false;
+                            }
                         } else {
                             status = "fail";
                         }
@@ -537,6 +566,16 @@ public class Server {
         }
 
         return clientsInfo;
+    }
+
+    private boolean isProposer(int clientId) {
+        int numClient = clients.size();
+        for (int i = numClient - 1; i >= numClient - 2; i--) {
+            if (clients.get(i).getClientId() == clientId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
