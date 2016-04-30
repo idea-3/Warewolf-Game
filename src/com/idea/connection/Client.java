@@ -19,6 +19,8 @@ public class Client {
     public static final HashMap<String, List<String>> clientToClientRequestKeys = initializedClientToClientRequestKeys();
     public static final HashMap<String, String> commands = initializedCommands();
     public static final HashMap<Integer, String> answers = initializedAnswerChoices();
+    public static final int civilianNum = 2;
+    public static final int werewolfNum = 4;
 
     private BufferedReader tcpIn;
     private PrintWriter tcpOut;
@@ -63,13 +65,13 @@ public class Client {
      * Menginisialisasi request keys dari client ke server
      * @return map kunci request JSON yang telah diinisialisasi
      */
-    private static HashMap initializedClientToServerRequestKeys() {
+    private static HashMap<String, List<String>> initializedClientToServerRequestKeys() {
         HashMap<String, List<String>> requestKeys = new HashMap<>();
         List<String> keys;
         keys = Arrays.asList("method", "username", "udp_address", "udp_port");
         requestKeys.put("join", keys);
 
-        keys = Arrays.asList("method");
+        keys = Collections.singletonList("method");
         requestKeys.put("leave", keys);
         requestKeys.put("ready", keys);
         requestKeys.put("client_address", keys);
@@ -102,7 +104,7 @@ public class Client {
      * Menginisialisasi request keys dari client ke client lainnya
      * @return map kunci request JSON yang telah diinisialisasi
      */
-    private static HashMap initializedClientToClientRequestKeys() {
+    private static HashMap<String, List<String>> initializedClientToClientRequestKeys() {
         HashMap<String, List<String>> requestKeys = new HashMap<>();
         List<String> keys;
 
@@ -121,7 +123,7 @@ public class Client {
         return requestKeys;
     }
 
-    private static HashMap initializedCommands() {
+    private static HashMap<String, String> initializedCommands() {
         HashMap<String, String> commands = new HashMap<>();
         commands.put("join", "Joining the game...");
         commands.put("leave", "Do you want to leave the game? (y/n)");
@@ -147,7 +149,7 @@ public class Client {
         return commands;
     }
 
-    private static HashMap initializedAnswerChoices() {
+    private static HashMap<Integer, String> initializedAnswerChoices() {
         HashMap<Integer, String> answerChoices = new HashMap<>();
         answerChoices.put(1, "y");
         answerChoices.put(0, "n");
@@ -417,7 +419,7 @@ public class Client {
 
             JSONObject response = receiveFromServer();
             System.out.println(response.getString("description"));
-            String status =  response.getString("status");
+            String status = response.getString("status");
             switch (status) {
                 case "ok":
                     saveClientList(response.getJSONArray("clients"));
@@ -449,14 +451,19 @@ public class Client {
             }
             int port = client.getInt("port");
             String username = client.getString("username");
+            String role = "";
+            if (client.has("role")) {
+                role = client.getString("role");
+            }
 
             // Memeriksa keberadaan client di clientsInfo
             if (clientsInfo.get(clientId) == null) {
-                clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username));
+                clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username, role));
             } else {
                 if (clientsInfo.get(clientId).isAlive() != isAlive) {
                     clientsInfo.get(clientId).setAlive(isAlive);
-                    System.out.println("Player " + clientId + " is dead.");
+                    clientsInfo.get(clientId).setRole(role);
+                    System.out.println("Player " + clientsInfo.get(clientId).getUsername() + " is dead.");
                 }
             }
         }
@@ -794,17 +801,21 @@ public class Client {
     private void voteResultWerewolf() throws JSONException, IOException {
         boolean isSuccess = false;
         do {
-            // Vote for itself
-            System.out.println(commands.get("vote_werewolf"));
-            String werewolfUsername = scan.nextLine();
+            int selfIsWerewolf = 0;
+            // Vote for itself if I am a werewolf
+            if (role.equals("werewolf")) {
+                System.out.println(commands.get("vote_werewolf"));
+                String werewolfUsername = scan.nextLine();
 
-            int clientIdVoted = getClientIdByUsername(werewolfUsername);
-            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
-            clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
+                int clientIdVoted = getClientIdByUsername(werewolfUsername);
+                int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+                clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
+                selfIsWerewolf = 1;
+            }
 
             // Waiting others to vote
             int votedClientNum = 0;
-            while (votedClientNum < getAliveClientsNum()-1) {
+            while (votedClientNum < werewolfNum-getDeadClientsNum("werewolf")-selfIsWerewolf) {
                 JSONObject voteRequest = getData(receiveFromClient());
                 handleClientVote(voteRequest);
                 votedClientNum++;
@@ -860,6 +871,22 @@ public class Client {
         }
 
         return aliveClientsNum;
+    }
+
+    /**
+     * Menghitung jumlah client yang telah mati dengan role sesuai parameter
+     * @param wantedRole role yang ingin dicari
+     * @return jumlah client yang telah mati dengan role wantedRole
+     */
+    private int getDeadClientsNum(String wantedRole) {
+        int deadClientsNum = 0;
+        for (ClientInfo clientInfo : clientsInfo.values()) {
+            if (!clientInfo.isAlive() && clientInfo.getRole().equals(wantedRole)) {
+                deadClientsNum++;
+            }
+        }
+
+        return deadClientsNum;
     }
 
     /**
@@ -970,17 +997,21 @@ public class Client {
         int voteSequence = 0;
         boolean isSuccess = false;
         do {
-            // Vote for itself
-            System.out.println(commands.get("vote_civilian"));
-            String playerUsername = scan.nextLine();
+            int selfIsCivilian = 0;
+            // Vote for itself if I am a civilian
+            if (role.equals("civilian")) {
+                System.out.println(commands.get("vote_civilian"));
+                String playerUsername = scan.nextLine();
 
-            int clientIdVoted = getClientIdByUsername(playerUsername);
-            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
-            clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
+                int clientIdVoted = getClientIdByUsername(playerUsername);
+                int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+                clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
+                selfIsCivilian = 1;
+            }
 
             // Waiting others to vote
             int votedClientNum = 0;
-            while (votedClientNum < getAliveClientsNum()-1) {
+            while (votedClientNum < civilianNum-getDeadClientsNum("civilian")-selfIsCivilian) {
                 JSONObject voteRequest = getData(receiveFromClient());
                 handleClientVote(voteRequest);
                 votedClientNum++;
@@ -1129,6 +1160,28 @@ public class Client {
     }
 
     /**
+     * Menerima request untuk melakukan vote saat ini dari server
+     * @throws IOException
+     * @throws JSONException
+     */
+    private void voteNow() throws IOException, JSONException {
+        JSONObject request = receiveFromServer();
+        JSONObject response;
+
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "phase"));
+        if (isRequestKeyValid(keys, request)) {
+            if (request.getString("method").equals("vote_now")) {
+                response = packResponse("ok", "vote_now");
+            } else {
+                response = packResponse("fail", "vote_now");
+            }
+        } else {
+            response = packResponse("error", "vote_now");
+        }
+        sendToServer(response);
+    }
+
+    /**
      * Menerima request game over dari server
      * @return true jika game over
      * @throws IOException
@@ -1149,6 +1202,30 @@ public class Client {
             //TODO: check when game over is failed
         } else {
             response = packResponse("error", request.getString("method"));
+        }
+        sendToServer(response);
+    }
+
+    /**
+     * Menerima request dari server bahwa leader saat ini telah terpilih dan menyimpan IDnya ke leaderId
+     * @throws IOException
+     * @throws JSONException
+     */
+    private void getLeaderSelected() throws IOException, JSONException {
+        JSONObject request = receiveFromServer();
+        JSONObject response;
+
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "kpu_id"));
+        if (isRequestKeyValid(keys, request)) {
+            int leaderIdByServer = request.getInt("kpu_id");
+            if (request.getString("method").equals("kpu_selected") && clientsInfo.get(leaderIdByServer)!=null) {
+                leaderId = leaderIdByServer;
+                response = packResponse("ok", "kpu_selected");
+            } else {
+                response = packResponse("fail", "kpu_selected");
+            }
+        } else {
+            response = packResponse("error", "kpu_selected");
         }
         sendToServer(response);
     }

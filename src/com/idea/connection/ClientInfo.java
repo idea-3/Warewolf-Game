@@ -11,13 +11,15 @@ public class ClientInfo {
     private int port;
     private String username;
     private int voteNum;
+    private String role;
 
-    public ClientInfo(boolean isAlive, InetAddress address, int port, String username) {
+    public ClientInfo(boolean isAlive, InetAddress address, int port, String username, String role) {
         this.isAlive = isAlive;
         this.address = address;
         this.port = port;
         this.username = username;
         this.voteNum = 0;
+        this.role = role;
     }
 
     public boolean isAlive() {
@@ -40,6 +42,10 @@ public class ClientInfo {
         return voteNum;
     }
 
+    public String getRole() {
+        return role;
+    }
+
     public void setAlive(boolean alive) {
         isAlive = alive;
     }
@@ -58,6 +64,10 @@ public class ClientInfo {
 
     public void setVoteNum(int voteNum) {
         this.voteNum = voteNum;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
     }
 
     public void set(boolean isAlive, InetAddress address, int port, String username) {
