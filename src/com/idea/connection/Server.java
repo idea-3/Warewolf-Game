@@ -19,9 +19,14 @@ import java.util.*;
  */
 public class Server {
     private ArrayList<ClientController> clients;
-    private ServerSocket serverSocket;
+    private boolean isDecideRoleDone;
+    private boolean isGamePlaying;
+    private boolean isLeaderJobDone;
+    private boolean isVoteDone;
     private int leaderId = -1;
     private int nextClientId = 0;
+    private ServerSocket serverSocket;
+    private String lastWinner;
     public static final HashMap<String, List<String>> okResponseKeys = initializeOkResponseKeys();
     public static final List<String> failResponseKeys = Arrays.asList("status", "description");
     public static final List<String> errorResponseKeys = Arrays.asList("status", "description");
@@ -135,7 +140,6 @@ public class Server {
         for (int i = 0; i < countWerewolf; i++) {
             do {
                 playerId = rand.nextInt(0) +  (clients.size() - 1);
-
             } while(roles[playerId] == 1);
 
             roles[playerId] = 1;
@@ -148,7 +152,7 @@ public class Server {
             } else {
                 role = "civilian";
             }
-            clients.get(i).setRole(role);
+            clients.get(i).role = role;
         }
     }
 
@@ -186,6 +190,50 @@ public class Server {
     }
 
     /**
+     * Mengecek apakah client merupakan proposer berdasarkan clientId-nya
+     * @param clientId
+     * @return true jika client merupakan proposer
+     */
+    private boolean isProposer(int clientId) {
+        int numClient = clients.size();
+        for (int i = numClient - 1; i >= numClient - 2; i--) {
+            if (clients.get(i).clientId == clientId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Mengecek sudah game over atau belum
+     * @return true jika game over
+     */
+    private boolean isGameOver() {
+        int numClient = clients.size();
+        int countWerewolf = 0, countCivilian = 0;
+
+        for (int i = 0; i < numClient; i++) {
+            if (clients.get(i).isAlive()) {
+                if (clients.get(i).role.equals("werewolf")) {
+                    countWerewolf++;
+                } else {
+                    countCivilian++;
+                }
+            }
+        }
+
+        if (countWerewolf == 0) {
+            lastWinner = "civilian";
+            return true;
+        } else if (countWerewolf == countCivilian) {
+            lastWinner = "werewolf";
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
      * Controller untuk setiap client yang terhubung dengan server
      */
     private class ClientController extends Thread {
@@ -198,7 +246,7 @@ public class Server {
         private PrintWriter out;
         private Socket clientSocket;
         private String role;
-        private String username;
+        private String username = "";
 
         /**
          * Konstruktor
@@ -209,18 +257,6 @@ public class Server {
             this.clientSocket = clientSocket;
             in = new BufferedReader(new InputStreamReader(this.clientSocket.getInputStream()));
             out = new PrintWriter(this.clientSocket.getOutputStream(), true);
-        }
-
-        /**
-         * Getter atribut clientId
-         * @return atribut clientId
-         */
-        public int getClientId() {
-            return clientId;
-        }
-
-        public void setRole(String role) {
-            this.role = role;
         }
 
         /**
@@ -257,7 +293,11 @@ public class Server {
          */
         public void run() {
             JSONObject request, response;
+            String dayNarration = "The day has came. All villagers wake up.";
+            String nightNarration = "The night has came. All villagers go to sleep. All werewolves wake up.";
                 try {
+                    isDecideRoleDone = false;
+                    isReady = false;
                     while (!isReady) {
                         request = receiveFromClient();
                         response = getResponse(request);
@@ -268,19 +308,24 @@ public class Server {
                         // Menunggu sampai semua client ready
                     }
 
+                    if (clientId == clients.get(0).clientId) {
+                        decideRole();
+                        isDecideRoleDone = true;
+                    } else {
+                        while (!isDecideRoleDone) {}
+                    }
                     startGame();
-
-                    String narration = "The day has came. All villagers wake up.";
-                    changePhase("day", narration);
 
                     setProposer();
                     if (!isProposer) {
                         acceptLeader();
                     }
-                    handleWerewolfKilledVote();
+                    handleVote("day");
 
-                    changePhase("night", "The night has came. All villagers go to sleep. All werewolves wake up.");
+                    changePhase("night", nightNarration);
+                    handleVote("night");
 
+                    changePhase("day", dayNarration);
                 } catch (SocketException e) {
                     e.printStackTrace();
                     clients.remove(this);
@@ -365,6 +410,24 @@ public class Server {
         }
 
         /**
+         * Server memulai voting ke semua pemain
+         * @param phase
+         * @throws JSONException
+         * @throws IOException
+         */
+        private void vote(String phase) throws JSONException, IOException {
+            JSONObject request = new JSONObject();
+            JSONObject response;
+
+            do {
+                request.put("method", "vote_now");
+                request.put("phase", phase);
+                sendToClient(request);
+                response = receiveFromClient();
+            } while (!response.getString("status").equals("ok"));
+        }
+
+        /**
          * Menangani request list client dari client
          * @throws IOException
          * @throws JSONException
@@ -387,23 +450,24 @@ public class Server {
         }
 
         /**
-         * Menangani proses penerimaan voting werewolf terbunuh
+         * Menangani proses penerimaan voting siang hari
          * @throws IOException
          * @throws JSONException
          */
-        private void handleWerewolfKilledVote() throws IOException, JSONException {
-            boolean isLeaderJobDone;
+        private void handleVote(String phase) throws IOException, JSONException {
             JSONObject voteResult;
             JSONObject response;
-            int voteStatus = -1;
 
+            isVoteDone = false;
             do {
+                vote(phase);
+                handleListClientRequest();
                 isLeaderJobDone = false;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
                     response =  getResponse(voteResult);
                     if (response.getString("status").equals("ok")) {
-                        voteStatus = 1;
+                        isVoteDone = true;
                     }
                     sendToClient(response);
                     isLeaderJobDone = true;
@@ -411,7 +475,20 @@ public class Server {
                     while (!isLeaderJobDone) {}
                     handleListClientRequest();
                 }
-            } while (voteStatus != 1);
+            } while (!isVoteDone);
+        }
+
+        private void announceGameOver(String winner) throws JSONException, IOException {
+            JSONObject request = new JSONObject();
+            JSONObject response;
+
+            request.put("method", "game_over");
+            request.put("winner", winner);
+            request.put("description", "Game over. The winner is " + winner + ".");
+            do {
+                sendToClient(request);
+                response = receiveFromClient();
+            } while (!response.getString("status").equals("ok"));
         }
 
         /**
@@ -511,6 +588,7 @@ public class Server {
                     if (request.isNull(validKey)) {
                         return false;
                     }
+                    i++;
                 }
                 return true;
             } else {
@@ -529,8 +607,8 @@ public class Server {
                 String method = request.getString(methodKey);
                 switch (method) {
                     case "join":
-                        if (isUsernameExist(username)) {
-                            status = "fail";
+                        if (isUsernameExist(request.getString("username"))) {
+                            status = "fail user exists";
                         } else {
                             status =  "ok";
                             username = request.getString("username");
@@ -589,16 +667,6 @@ public class Server {
         }
 
         return clientsInfo;
-    }
-
-    private boolean isProposer(int clientId) {
-        int numClient = clients.size();
-        for (int i = numClient - 1; i >= numClient - 2; i--) {
-            if (clients.get(i).getClientId() == clientId) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
