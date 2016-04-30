@@ -32,6 +32,7 @@ public class Client {
     private int id;
     private int proposalId;
     private int leaderId;
+    private String role;
     private boolean isProposer;
     private boolean isLeader;
     private boolean isAlive;
@@ -53,6 +54,7 @@ public class Client {
 
         proposalId = 0;
         leaderId = -1;
+        role = "";
         isProposer = false;
         isLeader = false;
     }
@@ -458,10 +460,12 @@ public class Client {
     private void prepareProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("prepare_proposal_client"));
         JSONObject request = requestPrepareProposalToClient();
-        for (Map.Entry<Integer, ClientInfo> entry : clientsInfo.entrySet()) {
-            ClientInfo clientInfo = entry.getValue();
-            sendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
+        ArrayList<Integer> proposerClientId = getProposer();
+        for (int i=0; i<proposerClientId.size(); i++) {
+            int clientId = proposerClientId.get(i);
+            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
+
         int receivedPacket = 0;
         int okProposal = 0;
         while (receivedPacket < getAliveClientsNum()-1) {
@@ -486,6 +490,23 @@ public class Client {
             }
             // TODO: Previous accepted dipakai?
         }
+    }
+
+    private ArrayList<Integer> getProposer() {
+        int firstClientId = -1;
+        int secondClientId = -1;
+        for (Integer key : clientsInfo.keySet()) {
+            Integer clientId = key;
+            if (clientId > firstClientId) {
+                secondClientId = firstClientId;
+                firstClientId = clientId;
+            }
+        }
+        ArrayList<Integer> proposerClientId = new ArrayList<>();
+        proposerClientId.add(firstClientId);
+        proposerClientId.add(secondClientId);
+
+        return proposerClientId;
     }
 
     /**
@@ -534,10 +555,12 @@ public class Client {
     private void acceptProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("accept_proposal_client"));
         JSONObject request = requestAcceptProposal();
-        for (Map.Entry<Integer, ClientInfo> entry : clientsInfo.entrySet()) {
-            ClientInfo clientInfo = entry.getValue();
-            sendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
+        ArrayList<Integer> proposerClientId = getProposer();
+        for (int i=0; i<proposerClientId.size(); i++) {
+            int clientId = proposerClientId.get(i);
+            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
+
         int receivedPacket = 0;
         int okProposal = 0;
         while (receivedPacket < getAliveClientsNum()-1) {
@@ -760,8 +783,6 @@ public class Client {
         return aliveClientsNum;
     }
 
-    // TODO: private int get alive clietn with specified role
-
     /**
      * Menyusun JSON untuk mengirim hasil vote membunuh werewolf dari leader ke server
      * @return objek JSON yang akan dikirim
@@ -977,9 +998,11 @@ public class Client {
         ArrayList<String> keys = new ArrayList<>();
         switch (request.getString("role")) {
             case "civilian":
+                role = "civilian";
                 keys = new ArrayList<>(Arrays.asList("method", "time", "role", "description"));
                 break;
             case "werewolf":
+                role = "werewolf";
                 keys = new ArrayList<>(Arrays.asList("method", "time", "role", "friend", "description"));
                 break;
         }
