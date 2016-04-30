@@ -202,7 +202,15 @@ public class Client {
 
             // Voting siapa yang akan dibunuh
 
-
+            JSONObject request = receiveFromServer();
+            switch (request.getString("method")) {
+                case "change_phase":
+                    changePhase(request);
+                    break;
+                case "game_over":
+                    gameOver(request);
+                    break;
+            }
         }
 
 //        if (id == 0) {
@@ -1190,8 +1198,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void changePhase() throws IOException, JSONException {
-        JSONObject request = receiveFromServer();
+    private void changePhase(JSONObject request) throws IOException, JSONException {
         JSONObject response;
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "time", "days", "description"));
 
@@ -1236,8 +1243,8 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void gameOver() throws IOException, JSONException {
-        JSONObject request = receiveFromServer();
+    private void gameOver(JSONObject request) throws IOException, JSONException {
+
         JSONObject response;
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "winner", "description"));
 
@@ -1248,9 +1255,12 @@ public class Client {
             System.out.print(commands.get("game_over"));
             System.out.println(request.getString("winner"));
 
+            isGameOver = true;
             //TODO: check when game over is failed
         } else {
             response = packResponse("error", request.getString("method"));
+
+            isGameOver = false;
         }
         sendToServer(response);
     }
