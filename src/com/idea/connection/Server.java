@@ -278,10 +278,12 @@ public class Server {
                         acceptLeader();
                     }
                     if (leaderId == clientId) {
-                        processWerewolfKilledVote();
+                        handleWerewolfKilledVote();
                     } else {
-
+                        handleListClientRequest();
                     }
+
+                    changePhase("night", "The night has came. All villagers go to sleep. All werewolves wake up.");
 
                 } catch (SocketException e) {
                     e.printStackTrace();
@@ -355,12 +357,26 @@ public class Server {
             } while (!response.getString("status").equals("ok"));
         }
 
+        /**
+         * Meng-assign proposer
+         */
         private void setProposer() {
             if (isProposer(clientId)) {
                 isProposer = true;
             } else {
                 isProposer = false;
             }
+        }
+
+        /**
+         * Menangani request list client dari client
+         * @throws IOException
+         * @throws JSONException
+         */
+        private void handleListClientRequest() throws IOException, JSONException {
+            JSONObject request = receiveFromClient();
+            JSONObject response = getResponse(request);
+            sendToClient(response);
         }
 
         /**
@@ -379,7 +395,7 @@ public class Server {
          * @throws IOException
          * @throws JSONException
          */
-        private void processWerewolfKilledVote() throws IOException, JSONException {
+        private void handleWerewolfKilledVote() throws IOException, JSONException {
             JSONObject voteResult;
             JSONObject response;
             int voteStatus = -1;
@@ -519,6 +535,9 @@ public class Server {
                     case "ready":
                         status = "ok";
                         isReady = true;
+                        break;
+                    case "client_address":
+                        status = "ok";
                         break;
                     case "accepted_proposal":
                         status = "ok";
