@@ -51,7 +51,7 @@ public class Client {
         tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
 
-        proposalId = -1;
+        proposalId = 0;
         leaderId = -1;
         isProposer = false;
         isLeader = false;
@@ -406,7 +406,7 @@ public class Client {
     }
 
     /**
-     * Menyimpan daftar client
+     * Menyimpan daftar client termasuk dirinya sendiri
      * @param clients array berisi response daftar client dari server
      * @throws JSONException
      */
@@ -414,28 +414,25 @@ public class Client {
         for (int i=0; i<clients.length(); i++) {
             JSONObject client = clients.getJSONObject(i);
             int clientId = client.getInt("player_id");
-            if (clientId != id) {
-                // ID client bukan dirinya sendiri
-                boolean isAlive = client.getBoolean("is_alive");
-                String addressName = client.getString("address");
-                InetAddress address = null;
-                try {
-                    address = InetAddress.getByName(addressName);
-                } catch (UnknownHostException e) {
-                    e.printStackTrace();
-                    System.out.println(commands.get("player_address_lost"));
-                }
-                int port = client.getInt("port");
-                String username = client.getString("username");
+            boolean isAlive = client.getBoolean("is_alive");
+            String addressName = client.getString("address");
+            InetAddress address = null;
+            try {
+                address = InetAddress.getByName(addressName);
+            } catch (UnknownHostException e) {
+                e.printStackTrace();
+                System.out.println(commands.get("player_address_lost"));
+            }
+            int port = client.getInt("port");
+            String username = client.getString("username");
 
-                // Memeriksa keberadaan client di clientsInfo
-                if (clientsInfo.get(clientId) == null) {
-                    clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username));
-                } else {
-                    if (clientsInfo.get(clientId).isAlive() != isAlive) {
-                        clientsInfo.get(clientId).setAlive(isAlive);
-                        System.out.println("Player " + clientId + " is dead.");
-                    }
+            // Memeriksa keberadaan client di clientsInfo
+            if (clientsInfo.get(clientId) == null) {
+                clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username));
+            } else {
+                if (clientsInfo.get(clientId).isAlive() != isAlive) {
+                    clientsInfo.get(clientId).setAlive(isAlive);
+                    System.out.println("Player " + clientId + " is dead.");
                 }
             }
         }
@@ -620,12 +617,11 @@ public class Client {
     }
 
     /**
-     * Melakukan voting untuk membunuh werewolf
+     * Melakukan voting untuk membunuh werewolf pada malam hari
      * @throws JSONException
      * @throws IOException
      */
     private void voteWerewolf() throws JSONException, IOException {
-        int voteSequence = 0;
         boolean isSuccess = false;
         do {
             System.out.println(commands.get("vote_werewolf"));
@@ -644,10 +640,9 @@ public class Client {
                     break;
                 default:
                     System.out.println(commands.get("vote_werewolf_not_success"));
-                    voteSequence++;
                     break;
             }
-        } while (!isSuccess && voteSequence<2);
+        } while (!isSuccess);
     }
 
     /**
@@ -690,12 +685,11 @@ public class Client {
 
     /**
      * Leader melakukan vote ke data pada dirinya sendiri, menunggu voting dari client lain,
-     * menghitung vote dan mengirimkan hasil rekapitulasi vote ke server
+     * menghitung vote dan mengirimkan hasil rekapitulasi vote ke server pada malam hari
      * @throws JSONException
      * @throws IOException
      */
     private void voteResultWerewolf() throws JSONException, IOException {
-        int voteSequence = 0;
         boolean isSuccess = false;
         do {
             // Vote for itself
@@ -716,13 +710,17 @@ public class Client {
 
             // Count vote
             System.out.println(commands.get("count_vote"));
-            handleClientsVote();
+            JSONObject playerKilledRequest = requestVoteResultWerewolf();
+            sendToServer(playerKilledRequest);
+            JSONObject response = receiveFromServer();
+            System.out.println(response.getString("description"));
+            if (response.getString("ok").equals("ok") && getHighestVoteClientId()!=-1) {
+                isSuccess = true;
+            }
             emptyClientsInfoVoteNum();
-        } while (!isSuccess && voteSequence<2);
-    }
 
-    private void handleClientsVote() {
-        // TODO: data semua vote dan masukkan kirim ke requestVoteResultWerewolf
+            // TODO: vote_now
+        } while (!isSuccess);
     }
 
     private void handleClientVote(JSONObject voteRequest) throws JSONException, IOException {
@@ -762,18 +760,25 @@ public class Client {
         return aliveClientsNum;
     }
 
+    // TODO: private int get alive clietn with specified role
+
     /**
      * Menyusun JSON untuk mengirim hasil vote membunuh werewolf dari leader ke server
-     * @param voteStatus status vote
-     * @param playerKilled ID client yang dibunuh
      * @return objek JSON yang akan dikirim
      * @throws JSONException
      */
-    private JSONObject requestVoteResultWerewolf(int voteStatus, int playerKilled) throws JSONException {
+    private JSONObject requestVoteResultWerewolf() throws JSONException {
         JSONObject request = new JSONObject();
-        request.put("method", "vote_result_werewolf");
-        request.put("vote_status", voteStatus);
-        request.put("player_killed", playerKilled);
+        int playerKilled = getHighestVoteClientId();
+        if (playerKilled == -1) {
+            // Tidak terdapat pemain yang dibunuh
+            request.put("method", "vote_result");
+            request.put("vote_status", -1);
+        } else {
+            request.put("method", "vote_result_werewolf");
+            request.put("vote_status", 1);
+            request.put("player_killed", playerKilled);
+        }
 
         List<List<Integer>> voteArrays = new ArrayList<>();
         for (Map.Entry<Integer, ClientInfo> vote : clientsInfo.entrySet()) {
@@ -786,7 +791,34 @@ public class Client {
             voteArrays.add(voteArray);
         }
         request.put("vote_result", voteArrays);
+
         return request;
+    }
+
+    /**
+     * Mengembalikan ID client dengan vote tertinggi
+     * @return ID client apabila terdapat vote tertinggi yang valid dan -1 apabila tidak dapat diambil keputusan
+     */
+    private int getHighestVoteClientId() {
+        int highestVoteNum = -1;
+        int sameHighestVoteNum = 0;
+        int highestVoteId = -1;
+        for (Map.Entry<Integer, ClientInfo> vote : clientsInfo.entrySet()) {
+            Integer clientId = vote.getKey();
+            Integer voteNum = vote.getValue().getVoteNum();
+            if (highestVoteNum < voteNum) {
+                highestVoteId = clientId;
+                highestVoteNum = voteNum;
+                sameHighestVoteNum = 0;
+            } else if (highestVoteNum == voteNum) {
+                sameHighestVoteNum++;
+            }
+        }
+        if (sameHighestVoteNum > 0) {
+            return -1;
+        } else {
+            return highestVoteId;
+        }
     }
 
     /**
@@ -802,7 +834,7 @@ public class Client {
             String civilianUsername = scan.nextLine();
 
             int clientId = getClientIdByUsername(civilianUsername);
-            JSONObject request = requestVoteWerewolf(clientId);
+            JSONObject request = requestVoteCivilian(clientId);
             sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
 
             JSONObject response = receiveFromServer();
@@ -840,40 +872,59 @@ public class Client {
         do {
             // Vote for itself
             System.out.println(commands.get("vote_civilian"));
-            String werewolfUsername = scan.nextLine();
+            String playerUsername = scan.nextLine();
 
-            int clientIdVoted = getClientIdByUsername(werewolfUsername);
+            int clientIdVoted = getClientIdByUsername(playerUsername);
+            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+            clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
 
             // Waiting others to vote
             int votedClientNum = 0;
             while (votedClientNum < getAliveClientsNum()-1) {
                 JSONObject voteRequest = getData(receiveFromClient());
                 handleClientVote(voteRequest);
+                votedClientNum++;
             }
 
             // Count vote
             System.out.println(commands.get("count_vote"));
-            handleClientsVote();
+            JSONObject playerKilledRequest = requestVoteResultCivilian();
+            sendToServer(playerKilledRequest);
+            JSONObject response = receiveFromServer();
+            System.out.println(response.getString("description"));
+            if (response.getString("ok").equals("ok") && getHighestVoteClientId()!=-1) {
+                isSuccess = true;
+            } else {
+                voteSequence++;
+            }
             emptyClientsInfoVoteNum();
+
+            // TODO: vote_now
         } while (!isSuccess && voteSequence<2);
     }
 
     /**
      * Menyusun JSON untuk mengirim hasil vote membunuh civilian dari leader ke server
-     * @param voteStatus status vote
-     * @param playerKilled ID client yang dibunuh
      * @return objek JSON yang akan dikirim
      * @throws JSONException
      */
-    private JSONObject requestVoteResultCivilian(HashMap<Integer, Integer> voteResult, int voteStatus, int playerKilled) throws JSONException {
+    private JSONObject requestVoteResultCivilian() throws JSONException {
         JSONObject request = new JSONObject();
-        request.put("method", "vote_result_civilian");
-        request.put("vote_status", voteStatus);
-        request.put("player_killed", playerKilled);
+        int playerKilled = getHighestVoteClientId();
+        if (playerKilled == -1) {
+            // Tidak terdapat pemain yang dibunuh
+            request.put("method", "vote_result");
+            request.put("vote_status", -1);
+        } else {
+            request.put("method", "vote_result_civilian");
+            request.put("vote_status", 1);
+            request.put("player_killed", playerKilled);
+        }
+
         List<List<Integer>> voteArrays = new ArrayList<>();
-        for (Map.Entry<Integer, Integer> vote : voteResult.entrySet()) {
+        for (Map.Entry<Integer, ClientInfo> vote : clientsInfo.entrySet()) {
             Integer clientId = vote.getKey();
-            Integer voteNum = vote.getValue();
+            Integer voteNum = vote.getValue().getVoteNum();
 
             List<Integer> voteArray = new ArrayList<>();
             voteArray.add(clientId);
