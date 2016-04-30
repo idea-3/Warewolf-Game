@@ -1,8 +1,5 @@
 package com.idea.connection;
 
-import com.sun.deploy.util.SessionState;
-import com.sun.scenario.effect.impl.sw.java.JSWInvertMaskPeer;
-import com.sun.xml.internal.bind.v2.runtime.unmarshaller.XsiNilLoader;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -162,10 +159,15 @@ public class Client {
         System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
         System.out.println("Client port: " + udpSocket.getLocalPort());
 
+        // Inisialisasi game
         joinGame();
         readyUp();
         startGame();
+        changePhase();
 
+        while (!isGameOver()) {
+
+        }
 
 //        if (id == 0) {
 //            System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
@@ -951,15 +953,7 @@ public class Client {
     private void startGame() throws IOException, JSONException {
         JSONObject request = receiveFromServer();
         JSONObject response;
-        ArrayList<String> keys = new ArrayList<>();
-        switch (request.getString("role")) {
-            case "civilian":
-                keys = new ArrayList<>(Arrays.asList("method", "time", "role", "description"));
-                break;
-            case "werewolf":
-                keys = new ArrayList<>(Arrays.asList("method", "time", "role", "friend", "description"));
-                break;
-        }
+        ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "time", "role", "friend", "description"));
 
         if (isRequestKeyValid(keys, request)) {
             response = packResponse("ok", request.getString("method"));
@@ -969,7 +963,7 @@ public class Client {
 
             if (request.getString("role").equals("werewolf")) {
                 System.out.println("Your friends: ");
-                JSONArray friends = response.getJSONArray("friend");
+                JSONArray friends = request.getJSONArray("friend");
                 for (int i = 0; i < friends.length(); i++) {
                     System.out.println(friends.getString(i));
                 }
@@ -1006,14 +1000,16 @@ public class Client {
     }
 
     /**
-     * Menerima request dari server ketika permainan berakhir
+     * Menerima request game over dari server
+     * @return true jika game over
      * @throws IOException
      * @throws JSONException
      */
-    private void gameOver() throws IOException, JSONException {
+    private boolean isGameOver() throws IOException, JSONException {
         JSONObject request = receiveFromServer();
         JSONObject response;
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "winner", "description"));
+        boolean isGameOver;
 
         if (isRequestKeyValid(keys, request)) {
             response = packResponse("ok", request.getString("method"));
@@ -1022,11 +1018,15 @@ public class Client {
             System.out.print(commands.get("game_over"));
             System.out.println(request.getString("winner"));
 
+            isGameOver = true;
+
             //TODO: check when game over is failed
         } else {
             response = packResponse("error", request.getString("method"));
+            isGameOver = false;
         }
         sendToServer(response);
+        return isGameOver;
     }
 
     /**
@@ -1045,17 +1045,19 @@ public class Client {
     public static void main(String[] args) throws IOException, JSONException {
         Scanner scan = new Scanner(System.in);
 
-        System.out.print("Input server IP host name: ");
-        String hostName = scan.nextLine();
-        System.out.print("Input server port: ");
-        int port = Integer.parseInt(scan.nextLine());
+        String hostName = "10.5.24.104";
+        int port = 8080;
+//        int udpPort = 8000;
+
+//        System.out.print("Input server IP host name: ");
+//        String hostName = scan.nextLine();
+//        System.out.print("Input server port: ");
+//        int port = Integer.parseInt(scan.nextLine());
         System.out.print("Input UDP port: ");
         int udpPort = Integer.parseInt(scan.nextLine());
         System.out.println(InetAddress.getLocalHost().getHostAddress());
 
-//        String hostName = "10.5.24.104";
-//        int port = 8080;
-//        int udpPort = 8000;
+
 
         System.out.println("Connecting to " + hostName + " on port " + port);
         Client client = new Client(hostName, port, udpPort);
