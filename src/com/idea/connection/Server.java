@@ -291,7 +291,7 @@ public class Server {
         public void sendToClient(JSONObject response) {
             out.println(response.toString());
             out.flush();
-            System.out.println("Response to client: " + response);
+            System.out.println("Response to client " + username + ": " + response);
         }
 
         /**
@@ -308,7 +308,7 @@ public class Server {
             clientString = in.readLine();
             stringBuilder.append(clientString);
             request = new JSONObject(stringBuilder.toString());
-            System.out.println("Receive from client: " + request);
+            System.out.println("Received from client " + username + ": " + request);
 
             return request;
         }
@@ -333,7 +333,6 @@ public class Server {
 
                 while (!isAllReady()) {
                     // Menunggu sampai semua client ready
-
                 }
 
                 if (clientId == clients.get(0).clientId) {
@@ -367,8 +366,13 @@ public class Server {
                     announceLeader();
                     handleDayVote();
 
-                    changePhase("night", nightNarration);
-                    handleNightVote();
+                    if (!isGameOver()) {
+                        sendDummyChangePhase("night", nightNarration);
+                        changePhase("night", nightNarration);
+                        handleListClientRequest();
+                        handleNightVote();
+                        sendDummyChangePhase("day", dayNarration);
+                    }
                 } while (!isGameOver());
                 isGameRunning = false;
                 announceGameOver(lastWinner);
@@ -388,6 +392,16 @@ public class Server {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+        }
+
+        private void sendDummyChangePhase(String time, String narration) throws JSONException {
+            JSONObject request = new JSONObject();
+
+            request.put("method", "change_phase");
+            request.put("time", time);
+            request.put("days", countDay);
+            request.put("description", narration);
+            sendToClient(request);
         }
 
         private void startGame() throws JSONException, IOException {
@@ -549,7 +563,7 @@ public class Server {
                         Thread.sleep(1000);
                     }
                 }
-                handleListClientRequest();
+                Thread.sleep(1000);
             } while (!isVoteDone);
         }
 
@@ -560,7 +574,8 @@ public class Server {
 
             isVoteDone = false;
             do {
-                if (isAlive && role.equals("werewolf")) {
+                System.out.println("isAlive: " + isAlive() + "-role: " +role);
+                if (isAlive && (role.equals("werewolf") || clientId==leaderId)) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
@@ -571,12 +586,18 @@ public class Server {
                     response = getResponse(voteResult);
                     sendToClient(response);
                     isLeaderJobDone = true;
+                    System.out.println("isVoteDone1: " + isVoteDone);
                 } else {
                     while (!isLeaderJobDone) {
                         Thread.sleep(1000);
                     }
+                    System.out.println("isVoteDone2: " + isVoteDone);
                 }
+                System.out.println("isVoteDone3: " + isVoteDone);
+                Thread.sleep(1000);
+                System.out.println("isVoteDone4: " + isVoteDone);
             } while (!isVoteDone);
+            System.out.println("tes");
         }
 
         /**
