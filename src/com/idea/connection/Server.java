@@ -761,6 +761,9 @@ public class Server {
             clientInfo.put("address", udpAddress);
             clientInfo.put("port", udpPort);
             clientInfo.put("username", username);
+            if (!isAlive) {
+                clientInfo.put("role", role);
+            }
 
             return clientInfo;
         }
