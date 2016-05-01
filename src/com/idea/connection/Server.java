@@ -21,9 +21,9 @@ public class Server {
     private ArrayList<ClientController> clients;
     private boolean isDecideRoleDone;
     private boolean isGameRunning = false;
-    private boolean isLeaderChosen;
     private boolean isLeaderJobDone;
     private boolean isVoteDone;
+    private int isLeaderChosen;
     private int leaderId = -1;
     private int nextClientId = 0;
     private ServerSocket serverSocket;
@@ -352,17 +352,16 @@ public class Server {
                         handleListClientRequest();
                     }
 
-                    isLeaderChosen = false;
+                    isLeaderChosen = 0;
                     handleListClientRequest();
                     setProposer();
 
                     if (!isProposer) {
                         acceptLeader();
-                        isLeaderChosen = true;
-                    } else {
-                        while (!isLeaderChosen) {
-                            Thread.sleep(1000);
-                        }
+                        isLeaderChosen++;
+                    }
+                    while (isLeaderChosen < clients.size() - 2) {
+                        Thread.sleep(1000);
                     }
                     announceLeader();
                     handleDayVote();

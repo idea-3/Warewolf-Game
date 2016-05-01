@@ -11,6 +11,8 @@ import java.util.Random;
  */
 public class UnreliableSender {
     private DatagramSocket datagramSocket;
+    private double accuracy = 0.85;
+    private double rand = 0;
     private Random random;
 
     /**
@@ -24,14 +26,35 @@ public class UnreliableSender {
     }
 
     /**
-     * Mengirim paket UDP dengan persentase keberhasilan 85%
+     * Getter atribut accuracy
+     * @return atribut accuracy
+     */
+    public double getAccuracy() {
+        return accuracy;
+    }
+
+    /**
+     * Mengirim paket UDP dengan persentase keberhasilan sebesar accuracy
      * @param packet paket yang dikirim
      * @throws IOException
      */
     public void send(DatagramPacket packet) throws IOException {
         double rand = random.nextDouble();
-        if (rand < 0.85) {
+        this.rand = rand;
+        if (rand < accuracy) {
             datagramSocket.send(packet);
+        }
+    }
+
+    /**
+     * Mengecek status keberhasilan pengiriman terakhir
+     * @return true jika pengiriman terakhir berhasil dilakukan
+     */
+    public boolean isSent() {
+        if (rand < accuracy) {
+            return true;
+        } else {
+            return false;
         }
     }
 }

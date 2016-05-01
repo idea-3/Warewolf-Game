@@ -8,6 +8,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.lang.reflect.Array;
 import java.net.*;
 import java.util.*;
 
@@ -25,6 +26,7 @@ public class Client {
     private BufferedReader tcpIn;
     private PrintWriter tcpOut;
     private DatagramSocket udpSocket;
+    private UnreliableSender unreliableSender;
     private Socket tcpSocket;
     private Scanner scan;
 
@@ -52,6 +54,7 @@ public class Client {
     public Client(String hostName, int port, int udpPort) throws IOException {
         tcpSocket = new Socket(hostName, port);
         udpSocket = new DatagramSocket(udpPort);
+        unreliableSender = new UnreliableSender(udpSocket);
         tcpIn = new BufferedReader(new InputStreamReader(tcpSocket.getInputStream()));
         tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
@@ -191,14 +194,16 @@ public class Client {
             promise[1] = -1;
             if (isProposer) {
                 // Mengirim proposal ke acceptor
+                udpSocket.setSoTimeout(5000);
                 prepareProposalToClient();
                 if (isPreparedProposer) {
                     Thread.sleep(1000);
                     acceptProposalToClient();
                 }
+                udpSocket.setSoTimeout(0);
             } else {
                 // Menerima proposal dari proposer
-                countReceiveProposal = 4;
+                countReceiveProposal = 3;
                 do {
                     DatagramPacket datagramPacket = receiveFromClient();
                     JSONObject data = getData(datagramPacket);
@@ -323,6 +328,13 @@ public class Client {
         System.out.println("Received from server: " + response);
 
         return response;
+    }
+
+    private void unReliableSendToClient(JSONObject data, InetAddress address, int port) throws IOException {
+        byte[] dataByte = data.toString().getBytes();
+        DatagramPacket packet = new DatagramPacket(dataByte, dataByte.length, address, port);
+        System.out.println("Unreliable data to client " + address + " " + port + ": " + data);
+        unreliableSender.send(packet);
     }
 
     /**
@@ -602,8 +614,6 @@ public class Client {
             } else if (promise[0] > proposalId.getInt(0)){
                 response.put("status", "fail");
                 response.put("description", "rejected");
-
-                countReceiveProposal--;
             } else if (promise[0] == proposalId.getInt(0)) {
                 if (promise[1] < proposalId.getInt(1)) {
                     response.put("status", "ok");
@@ -611,18 +621,24 @@ public class Client {
                     response.put("previous_accepted", promise[1]);
 
                     promise[1] = proposalId.getInt(1);
-                } else if (promise[1] > proposalId.getInt(0)){
+                } else if (promise[1] > proposalId.getInt(1)){
                     response.put("status", "fail");
                     response.put("description", "rejected");
-
-                    countReceiveProposal--;
+                } else {
+                    response.put("status", "ok");
+                    response.put("description", "accepted");
+                    response.put("previous_accepted", promise[1]);
                 }
             }
         } else {
             response = packResponse("error", request.getString("method"));
         }
         countReceiveProposal--;
-        sendToClient(response, address, port);
+        unReliableSendToClient(response, address, port);
+        // Mengecek apakah terkirim
+        if (!unreliableSender.isSent()) {
+            countReceiveProposal++;
+        }
     }
 
     /**
@@ -637,6 +653,7 @@ public class Client {
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id", "kpu_id"));
         if (isRequestKeyValid(keys, request)) {
             JSONArray proposalId = request.getJSONArray("proposal_id");
+            System.out.println("Client " + id + " proposal " + proposalId.getInt(0) + " " + proposalId.getInt(1) + " promise " + promise[0] + " " + promise[1]);
             if (promise[0] > proposalId.getInt(0)){
                 response.put("status", "fail");
                 response.put("description", "rejected");
@@ -647,7 +664,7 @@ public class Client {
 
                     promise[1] = proposalId.getInt(1);
                     leaderId = promise[1];
-                } else if (promise[1] > proposalId.getInt(0)){
+                } else if (promise[1] > proposalId.getInt(1)){
                     response.put("status", "fail");
                     response.put("description", "rejected");
                 }
@@ -656,7 +673,11 @@ public class Client {
             response = packResponse("error", request.getString("method"));
         }
         countReceiveProposal--;
-        sendToClient(response, address, port);
+        unReliableSendToClient(response, address, port);
+        // Mengecek apakah terkirim
+        if (!unreliableSender.isSent()) {
+            countReceiveProposal++;
+        }
     }
 
     private void setIsProposer() {
@@ -688,32 +709,54 @@ public class Client {
         ArrayList<Integer> acceptorClientId = getAcceptor();
         for (int i=0; i<acceptorClientId.size(); i++) {
             int clientId = acceptorClientId.get(i);
-            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            unReliableSendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
 
+        ArrayList<DatagramPacket> packets = new ArrayList<>();
         int receivedPacket = 0;
         int okProposal = 0;
-        while (receivedPacket < getAliveClientsNum()-2) {
-            // Menunggu paket sampai seluruh acceptor mengirim response
-            DatagramPacket packet = receiveFromClient();
-            JSONObject response = getData(packet);
-            System.out.println("Response converted to JSON: " + response);
-            receivedPacket++;
+        while (receivedPacket < getAliveClientsNum() - 2) {
+            try {
+                // Menunggu paket sampai seluruh acceptor mengirim response
+                DatagramPacket packet = receiveFromClient();
+                packets.add(packet);
+                JSONObject response = getData(packet);
+                System.out.println("Response converted to JSON: " + response);
+                receivedPacket++;
 
-            String status = response.getString("status");
-            String description = response.getString("description");
-            if (!status.equals("error")) {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
-                if (status.equals("ok")) {
-                    okProposal++;
+                String status = response.getString("status");
+                String description = response.getString("description");
+                if (!status.equals("error")) {
+                    System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
+                    if (status.equals("ok")) {
+                        okProposal++;
+                    } else {
+                        isPreparedProposer = false;
+                    }
                 } else {
                     isPreparedProposer = false;
+                    System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
                 }
-            } else {
-                isPreparedProposer = false;
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
+                // TODO: Previous accepted dipakai?
+            } catch (SocketTimeoutException e) {
+                // Mengirim ulang prepare proposal
+                for (int i = 0; i < acceptorClientId.size(); i++) {
+                    boolean isFound = false;
+                    int j = 0;
+                    ClientInfo clientInfo = clientsInfo.get(i);
+                    while (j < packets.size() && !isFound) {
+                        DatagramPacket packet = packets.get(j);
+                        if (clientInfo.getAddress().equals(packet.getAddress()) && clientInfo.getPort() == packet.getPort()) {
+                            isFound = true;
+                        } else {
+                            j++;
+                        }
+                    }
+                    if (!isFound) {
+                        unReliableSendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
+                    }
+                }
             }
-            // TODO: Previous accepted dipakai?
         }
         if (okProposal == receivedPacket) {
             isPreparedProposer = true;
@@ -800,24 +843,46 @@ public class Client {
             sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
 
+        ArrayList<DatagramPacket> packets = new ArrayList<>();
         int receivedPacket = 0;
         int okProposal = 0;
         while (receivedPacket < getAliveClientsNum()-2) {
-            // Menunggu paket sampai seluruh acceptor mengirim response
-            DatagramPacket packet = receiveFromClient();
-            JSONObject response = getData(packet);
-            System.out.println("Response converted to JSON: " + response);
-            receivedPacket++;
+            try {
+                // Menunggu paket sampai seluruh acceptor mengirim response
+                DatagramPacket packet = receiveFromClient();
+                packets.add(packet);
+                JSONObject response = getData(packet);
+                System.out.println("Response converted to JSON: " + response);
+                receivedPacket++;
 
-            String status = response.getString("status");
-            String description = response.getString("description");
-            if (!status.equals("error")) {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
-                if (status.equals("ok")) {
-                    okProposal++;
+                String status = response.getString("status");
+                String description = response.getString("description");
+                if (!status.equals("error")) {
+                    System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
+                    if (status.equals("ok")) {
+                        okProposal++;
+                    }
+                } else {
+                    System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
                 }
-            } else {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
+            } catch (SocketTimeoutException e) {
+                // Mengirim ulang prepare proposal
+                for (int i = 0; i < acceptorClientId.size(); i++) {
+                    boolean isFound = false;
+                    int j = 0;
+                    ClientInfo clientInfo = clientsInfo.get(i);
+                    while (j < packets.size() && !isFound) {
+                        DatagramPacket packet = packets.get(j);
+                        if (clientInfo.getAddress().equals(packet.getAddress()) && clientInfo.getPort() == packet.getPort()) {
+                            isFound = true;
+                        } else {
+                            j++;
+                        }
+                    }
+                    if (!isFound) {
+                        unReliableSendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
+                    }
+                }
             }
         }
         sequenceId += 1;
