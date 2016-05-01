@@ -21,6 +21,7 @@ public class Server {
     private ArrayList<ClientController> clients;
     private boolean isDecideRoleDone;
     private boolean isGameRunning = false;
+    private boolean isLeaderChosen;
     private boolean isLeaderJobDone;
     private boolean isVoteDone;
     private int leaderId = -1;
@@ -257,6 +258,8 @@ public class Server {
         private PrintWriter out;
         private Socket clientSocket;
         private String role;
+        private String udpAddress;
+        private String udpPort;
         private String username = "";
 
         /**
@@ -325,22 +328,28 @@ public class Server {
                     decideRole();
                     isDecideRoleDone = true;
                 } else {
-                    while (!isDecideRoleDone) {}
+                    while (!isDecideRoleDone) {Thread.sleep(1000);}
                 }
                 startGame();
                 isGameRunning = true;
 
                 do {
-                    handleListClientRequest();
-                    setProposer();
-                    if (!isProposer) {
-                        acceptLeader();
-                    }
-                    announceLeader();
                     if (isFirstDay) {
                         changePhase("day", dayNarration);
                         isFirstDay = false;
                     }
+                    isLeaderChosen = false;
+                    handleListClientRequest();
+                    setProposer();
+                    if (!isProposer) {
+                        acceptLeader();
+                        isLeaderChosen = true;
+                    } else {
+                        while (!isLeaderChosen) {
+                            Thread.sleep(1000);
+                        }
+                    }
+                    announceLeader();
                     handleDayVote();
 
                     changePhase("night", nightNarration);
@@ -498,7 +507,7 @@ public class Server {
          * @throws IOException
          * @throws JSONException
          */
-        private void handleDayVote() throws IOException, JSONException {
+        private void handleDayVote() throws IOException, JSONException, InterruptedException {
             int countVote = 0;
             JSONObject voteResult;
             JSONObject response;
@@ -519,13 +528,15 @@ public class Server {
                     sendToClient(response);
                     isLeaderJobDone = true;
                 } else {
-                    while (!isLeaderJobDone) {}
+                    while (!isLeaderJobDone) {
+                        Thread.sleep(1000);
+                    }
                     handleListClientRequest();
                 }
             } while (!isVoteDone);
         }
 
-        private void handleNightVote() throws IOException, JSONException {
+        private void handleNightVote() throws IOException, JSONException, InterruptedException {
             JSONObject voteResult;
             JSONObject response;
             String phase = "night";
@@ -541,7 +552,9 @@ public class Server {
                     sendToClient(response);
                     isLeaderJobDone = true;
                 } else {
-                    while (!isLeaderJobDone) {}
+                    while (!isLeaderJobDone) {
+                        Thread.sleep(1000);
+                    }
                     handleListClientRequest();
                 }
             } while (!isVoteDone);
@@ -689,6 +702,8 @@ public class Server {
                         } else {
                             status =  "ok";
                             username = request.getString("username");
+                            udpAddress = request.getString("udp_address");
+                            udpPort = request.getString("udp_port");
                         }
                         break;
                     case "ready":
@@ -728,8 +743,8 @@ public class Server {
             JSONObject clientInfo = new JSONObject();
             clientInfo.put("player_id", clientId);
             clientInfo.put("is_alive", isAlive);
-            clientInfo.put("address", clientSocket.getInetAddress().getHostAddress());
-            clientInfo.put("port", clientSocket.getPort());
+            clientInfo.put("address", udpAddress);
+            clientInfo.put("port", udpPort);
             clientInfo.put("username", username);
 
             return clientInfo;
@@ -778,7 +793,8 @@ public class Server {
         Scanner scan = new Scanner(System.in);
 
         System.out.print("Input server port: " );
-        port = Integer.parseInt(scan.nextLine());
+        ///port = Integer.parseInt(scan.nextLine());
+        port = 2000;
         Server server = new Server(port);
         server.run();
     }

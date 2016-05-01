@@ -142,8 +142,8 @@ public class Client {
         commands.put("prepare_proposal_client", "Propose to be a leader...");
         commands.put("accept_proposal_client", "Accept to be a leader...");
         commands.put("player_address_lost", "Lost a player address...");
-        commands.put("prepare_me_leader", "I am a leader (propose)...");
-        commands.put("accept_me_leader", "I am a leader (accept)...");
+        commands.put("prepare_me_leader", "I am prepared to be a leader...");
+        commands.put("accept_me_leader", "I am a leader...");
         commands.put("accept_proposal_server", "Send leader information to server...");
         commands.put("vote_werewolf", "Who do you want to kill?");
         commands.put("vote_werewolf_not_success", "Vote werewolf is not success");
@@ -170,7 +170,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    public void run() throws JSONException, IOException {
+    public void run() throws JSONException, IOException, InterruptedException {
         System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
         System.out.println("Client port: " + udpSocket.getLocalPort());
 
@@ -178,6 +178,7 @@ public class Client {
         joinGame();
         readyUp();
         startGame();
+        Thread.sleep(1000);
 
         while (!isGameOver) {
             // Pemilihan leader
@@ -187,6 +188,7 @@ public class Client {
             isPreparedProposer = false;
             promise[0] = 0;
             promise[1] = -1;
+            System.out.println("IsProposer: " + isProposer);
             if (isProposer) {
                 // Mengirim proposal ke acceptor
                 prepareProposalToClient();
@@ -198,10 +200,11 @@ public class Client {
                 countReceiveProposal = 4;
                 do {
                     DatagramPacket datagramPacket = receiveFromClient();
-                    if (getData(datagramPacket).getString("method").equals("prepare_proposal")) {
-                        receivedProposal(datagramPacket);
-                    } else if (getData(datagramPacket).getString("method").equals("accept_proposal")) {
-                        receiveAcceptProposal(datagramPacket);
+                    JSONObject data = getData(datagramPacket);
+                    if (data.getString("method").equals("prepare_proposal")) {
+                        receivedProposal(data, datagramPacket.getAddress(), datagramPacket.getPort());
+                    } else if (data.getString("method").equals("accept_proposal")) {
+                        receiveAcceptProposal(data, datagramPacket.getAddress(), datagramPacket.getPort());
                     }
                 } while (countReceiveProposal > 0);
 
@@ -352,7 +355,11 @@ public class Client {
         boolean isValid = false;
         do {
             System.out.print(commands.get("username"));
-            username = scan.nextLine();
+            ///username = scan.nextLine();
+            // TODO: username jangan langssung disimpan ke dalam variable username
+            Random rand = new Random();
+            Integer tes = rand.nextInt((3100-3000) +1) +3000;
+            String username = tes.toString();
 
             JSONObject request = requestJoinGame(username);
             sendToServer(request);
@@ -545,12 +552,11 @@ public class Client {
 
     /**
      * Mengirim response prepare proposal dari acceptor ke proposer
-     * @param datagramPacket paket yang diterima dari proposer
+     * @param request paket yang diterima dari proposer
      * @throws IOException
      * @throws JSONException
      */
-    private void receivedProposal(DatagramPacket datagramPacket) throws IOException, JSONException {
-        JSONObject request = getData(datagramPacket);
+    private void receivedProposal(JSONObject request, InetAddress address, int port) throws IOException, JSONException {
         JSONObject response = new JSONObject();
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id"));
         if (isRequestKeyValid(keys, request)) {
@@ -591,17 +597,16 @@ public class Client {
             response = packResponse("error", request.getString("method"));
         }
         countReceiveProposal--;
-        sendToClient(response, datagramPacket.getAddress(), datagramPacket.getPort());
+        sendToClient(response, address, port);
     }
 
     /**
      * Mengirim response accept proposal dari acceptor ke proposer
-     * @param datagramPacket paket yang diterima dari proposer
+     * @param request paket yang diterima dari proposer
      * @throws IOException
      * @throws JSONException
      */
-    private void receiveAcceptProposal(DatagramPacket datagramPacket) throws IOException, JSONException {
-        JSONObject request = getData(datagramPacket);
+    private void receiveAcceptProposal(JSONObject request, InetAddress address, int port) throws IOException, JSONException {
         JSONObject response = new JSONObject();
 
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id", "kpu_id"));
@@ -627,19 +632,25 @@ public class Client {
             response = packResponse("error", request.getString("method"));
         }
         countReceiveProposal--;
-        sendToClient(response, datagramPacket.getAddress(), datagramPacket.getPort());
+        sendToClient(response, address, port);
     }
 
     private void setIsProposer() {
         ArrayList<Integer> proposerClientId = getProposer();
-        for (int i=0; i<proposerClientId.size(); i++) {
-            int clientId = proposerClientId.get(i);
+        int i = 0;
+        boolean isFound = false;
+        int clientId = 0;
+        while (i<proposerClientId.size() && !isFound) {
+            clientId = proposerClientId.get(i);
+            System.out.println("Proposer: " + clientId);
             if (clientId == id) {
-                isProposer = true;
+                isFound = true;
             } else {
-                isProposer = false;
+                isFound = false;
+                i++;
             }
         }
+        isProposer = isFound;
     }
 
     /**
@@ -650,12 +661,10 @@ public class Client {
     private void prepareProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("prepare_proposal_client"));
         JSONObject request = requestPrepareProposalToClient();
-        ArrayList<Integer> proposerClientId = getProposer();
-        for (int i=0; i<proposerClientId.size(); i++) {
-            int clientId = proposerClientId.get(i);
-            if (clientId != id) {
-                sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
-            }
+        ArrayList<Integer> acceptorClientId = getAcceptor();
+        for (int i=0; i<acceptorClientId.size(); i++) {
+            int clientId = acceptorClientId.get(i);
+            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
 
         int receivedPacket = 0;
@@ -665,6 +674,7 @@ public class Client {
             DatagramPacket packet = receiveFromClient();
             JSONObject response = getData(packet);
             System.out.println("Response converted to JSON: " + response);
+            receivedPacket++;
 
             String status = response.getString("status");
             String description = response.getString("description");
@@ -679,12 +689,23 @@ public class Client {
                 isPreparedProposer = false;
                 System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
             }
-            if (okProposal == receivedPacket) {
-                isLeader = true;
-                System.out.println(commands.get("prepare_me_leader"));
-            }
             // TODO: Previous accepted dipakai?
         }
+        if (okProposal == receivedPacket) {
+            isPreparedProposer = true;
+            System.out.println(commands.get("prepare_me_leader"));
+        }
+    }
+
+    private ArrayList<Integer> getAcceptor() {
+        ArrayList<Integer> proposerList = getProposer();
+        ArrayList<Integer> acceptorList = new ArrayList<>();
+        for (Integer clientId : clientsInfo.keySet()) {
+            if (!proposerList.contains(clientId)) {
+                acceptorList.add(clientId);
+            }
+        }
+        return acceptorList;
     }
 
     private ArrayList<Integer> getProposer() {
@@ -749,12 +770,10 @@ public class Client {
     private void acceptProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("accept_proposal_client"));
         JSONObject request = requestAcceptProposal();
-        ArrayList<Integer> proposerClientId = getProposer();
-        for (int i=0; i<proposerClientId.size(); i++) {
-            int clientId = proposerClientId.get(i);
-            if (clientId != id) {
-                sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
-            }
+        ArrayList<Integer> acceptorClientId = getAcceptor();
+        for (int i=0; i<acceptorClientId.size(); i++) {
+            int clientId = acceptorClientId.get(i);
+            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
 
         int receivedPacket = 0;
@@ -764,6 +783,7 @@ public class Client {
             DatagramPacket packet = receiveFromClient();
             JSONObject response = getData(packet);
             System.out.println("Response converted to JSON: " + response);
+            receivedPacket++;
 
             String status = response.getString("status");
             String description = response.getString("description");
@@ -775,10 +795,10 @@ public class Client {
             } else {
                 System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
             }
-            if (okProposal == receivedPacket) {
-                isLeader = true;
-                System.out.println(commands.get("accept_me_leader"));
-            }
+        }
+        if (okProposal == receivedPacket) {
+            isLeader = true;
+            System.out.println(commands.get("accept_me_leader"));
         }
     }
 
@@ -1356,13 +1376,12 @@ public class Client {
         return proposalIdArray;
     }
 
-    private static final int[] port = {3001,3002,3003,3004,3005,3006};
-    public static void main(String[] args) throws IOException, JSONException {
+    public static void main(String[] args) throws IOException, JSONException, InterruptedException {
         Scanner scan = new Scanner(System.in);
 
         System.out.print("Input server IP host name: ");
         ///String hostName = scan.nextLine();
-        String hostName = "irn";
+        String hostName = "Windows7-PC";
         System.out.print("Input server port: ");
         ///int port = Integer.parseInt(scan.nextLine());
         int port = 2000;
