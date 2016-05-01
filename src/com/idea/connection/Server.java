@@ -846,8 +846,8 @@ public class Server {
         Scanner scan = new Scanner(System.in);
 
         System.out.print("Input server port: " );
-        ///port = Integer.parseInt(scan.nextLine());
-        port = 2000;
+        port = Integer.parseInt(scan.nextLine());
+
         Server server = new Server(port);
         server.run();
     }

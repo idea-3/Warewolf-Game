@@ -17,7 +17,6 @@ import java.util.*;
  */
 public class Client {
     public static final HashMap<String, List<String>> clientToServerRequestKeys = initializedClientToServerRequestKeys();
-    public static final HashMap<String, List<String>> clientToClientRequestKeys = initializedClientToClientRequestKeys();
     public static final HashMap<String, String> commands = initializedCommands();
     public static final HashMap<Integer, String> answers = initializedAnswerChoices();
     public static final int civilianNum = 4;
@@ -111,36 +110,13 @@ public class Client {
         return requestKeys;
     }
 
-    /**
-     * Menginisialisasi request keys dari client ke client lainnya
-     * @return map kunci request JSON yang telah diinisialisasi
-     */
-    private static HashMap<String, List<String>> initializedClientToClientRequestKeys() {
-        HashMap<String, List<String>> requestKeys = new HashMap<>();
-        List<String> keys;
-
-        keys = Arrays.asList("method", "proposal_id");
-        requestKeys.put("prepare_proposal", keys);
-
-        keys = Arrays.asList("method", "proposal_id", "kpu_id");
-        requestKeys.put("accept_proposal", keys);
-
-        keys = Arrays.asList("method", "player_id");
-        requestKeys.put("vote_werewolf", keys);
-
-        keys = Arrays.asList("method", "player_id");
-        requestKeys.put("vote_civilian", keys);
-
-        return requestKeys;
-    }
-
     private static HashMap<String, String> initializedCommands() {
         HashMap<String, String> commands = new HashMap<>();
         commands.put("join", "Joining the game...");
         commands.put("leave", "Do you want to leave the game? (y/n)");
         commands.put("ready", "Are you ready? (y/n)");
         commands.put("username", "Username: ");
-        commands.put("left", "Are you sure want to leave the game?");
+        commands.put("left", "You have left the game");
         commands.put("client_list", "Retrieving players information...");
         commands.put("this_dead", "You are dead");
         commands.put("prepare_proposal_client", "Propose to be a leader...");
@@ -183,6 +159,7 @@ public class Client {
         // Inisialisasi game
         joinGame();
         readyUp();
+        leaveGame();
         startGame();
         Thread.sleep(1000);
 
@@ -486,6 +463,11 @@ public class Client {
                     System.out.println(description);
                     break;
             }
+        } else {
+            JSONObject request = new JSONObject();
+            request.put("method", "ready");
+            sendToServer(request);
+            receiveFromServer();
         }
     }
 
@@ -511,8 +493,7 @@ public class Client {
         String decision;
         do {
             System.out.println(commands.get("ready"));
-            ///decision = scan.nextLine();
-            decision = "y";
+            decision = scan.nextLine();
         } while (!decision.equals(answers.get(1)));
 
         JSONObject request = requestReadyUp();
@@ -1400,7 +1381,7 @@ public class Client {
             System.out.println(request.getString("description"));
 
             if (request.getString("role").equals("werewolf")) {
-                System.out.println("-------------------------------------------------------------Your friends: ");
+                System.out.println("Your friends: ");
                 JSONArray friends = request.getJSONArray("friend");
                 for (int i = 0; i < friends.length(); i++) {
                     System.out.println(friends.getString(i));
@@ -1526,17 +1507,13 @@ public class Client {
         Scanner scan = new Scanner(System.in);
 
         System.out.print("Input server IP host name: ");
-        ///String hostName = scan.nextLine();
-        String hostName = "irn";
+        String hostName = scan.nextLine();
+
         System.out.print("Input server port: ");
-        ///int port = Integer.parseInt(scan.nextLine());
-        int port = 2000;
+        int port = Integer.parseInt(scan.nextLine());
+
         System.out.print("Input UDP port: ");
         int udpPort = Integer.parseInt(scan.nextLine());
-//        java.util.Random rand = new Random();
-//        int udpPort = rand.nextInt((3100-3000) +1) +3000;
-        System.out.println(udpPort);
-        System.out.println(InetAddress.getLocalHost().getHostAddress());
 
         System.out.println("Connecting to " + hostName + " on port " + port);
         Client client = new Client(hostName, port, udpPort);
