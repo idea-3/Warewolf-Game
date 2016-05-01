@@ -306,55 +306,58 @@ public class Server {
             JSONObject request, response;
             String dayNarration = "The day has came. All villagers wake up.";
             String nightNarration = "The night has came. All villagers go to sleep. All werewolves wake up.";
-                try {
-                    isDecideRoleDone = false;
-                    isReady = false;
-                    while (!isReady) {
-                        request = receiveFromClient();
-                        response = getResponse(request);
-                        sendToClient(response);
-                    }
-
-                    while (!isAllReady()) {
-                        // Menunggu sampai semua client ready
-
-                    }
-
-                    if (clientId == clients.get(0).clientId) {
-                        decideRole();
-                        isDecideRoleDone = true;
-                    } else {
-                        while (!isDecideRoleDone) {}
-                    }
-                    startGame();
-                    isGameRunning = true;
-
-                    do {
-                        handleListClientRequest();
-                        setProposer();
-                        if (!isProposer) {
-                            acceptLeader();
-                        }
-                        announceLeader();
-                        handleDayVote();
-
-                        changePhase("night", nightNarration);
-                        handleNightVote();
-
-                        changePhase("day", dayNarration);
-                    } while (!isGameOver());
-                    isGameRunning = false;
-                    announceGameOver(lastWinner);
-                } catch (SocketException e) {
-                    e.printStackTrace();
-                    clients.remove(this);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+            boolean isFirstDay = true;
+            try {
+                isDecideRoleDone = false;
+                isReady = false;
+                while (!isReady) {
+                    request = receiveFromClient();
+                    response = getResponse(request);
+                    sendToClient(response);
                 }
+
+                while (!isAllReady()) {
+                    // Menunggu sampai semua client ready
+
+                }
+
+                if (clientId == clients.get(0).clientId) {
+                    decideRole();
+                    isDecideRoleDone = true;
+                } else {
+                    while (!isDecideRoleDone) {}
+                }
+                startGame();
+                isGameRunning = true;
+
+                do {
+                    handleListClientRequest();
+                    setProposer();
+                    if (!isProposer) {
+                        acceptLeader();
+                    }
+                    announceLeader();
+                    if (isFirstDay) {
+                        changePhase("day", dayNarration);
+                        isFirstDay = false;
+                    }
+                    handleDayVote();
+
+                    changePhase("night", nightNarration);
+                    handleNightVote();
+                } while (!isGameOver());
+                isGameRunning = false;
+                announceGameOver(lastWinner);
+            } catch (SocketException e) {
+                e.printStackTrace();
+                clients.remove(this);
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (JSONException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
 //                    try {
 //                        in.close();
 //                        out.close();

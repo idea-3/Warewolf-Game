@@ -4,7 +4,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import javax.xml.crypto.Data;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -42,6 +41,7 @@ public class Client {
     private boolean isGameOver;
     private String username;
     private HashMap<Integer, ClientInfo> clientsInfo;
+    private String phase;
 
     /**
      * Konstruktor
@@ -60,9 +60,12 @@ public class Client {
         leaderId = -1;
         role = "";
         isProposer = false;
+        isPreparedProposer = false;
         isLeader = false;
+        isAlive = true;
         isGameOver = false;
         clientsInfo = new HashMap<>();
+        phase = "day";
     }
 
     /**
@@ -135,6 +138,7 @@ public class Client {
         commands.put("username", "Username: ");
         commands.put("left", "Are you sure want to leave the game?");
         commands.put("client_list", "Retrieving players information...");
+        commands.put("this_dead", "You are dead");
         commands.put("prepare_proposal_client", "Propose to be a leader...");
         commands.put("accept_proposal_client", "Accept to be a leader...");
         commands.put("player_address_lost", "Lost a player address...");
@@ -184,12 +188,13 @@ public class Client {
             promise[0] = 0;
             promise[1] = -1;
             if (isProposer) {
+                // Mengirim proposal ke acceptor
                 prepareProposalToClient();
                 if (isPreparedProposer) {
                     acceptProposalToClient();
                 }
             } else {
-                // Menerima proposal
+                // Menerima proposal dari proposer
                 countReceiveProposal = 4;
                 do {
                     DatagramPacket datagramPacket = receiveFromClient();
@@ -199,9 +204,34 @@ public class Client {
                         receiveAcceptProposal(datagramPacket);
                     }
                 } while (countReceiveProposal > 0);
+
+                // Mengirim proposal yang diaccept ke server
+                acceptProposalToServer();
             }
 
+            // Menerima informasi leader dari server
+            getLeaderSelected();
+
             // Voting siapa yang akan dibunuh
+            voteNow();
+            askClientList();
+            if (phase.equals("day")) {
+                if (isLeader) {
+                    voteResultCivilian();
+                } else {
+                    if (isAlive) {
+                        voteCivilian();
+                    }
+                }
+            } else {
+                if (isLeader) {
+                    voteResultWerewolf();
+                } else {
+                    if (isAlive) {
+                        voteWerewolf();
+                    }
+                }
+            }
 
             JSONObject request = receiveFromServer();
             switch (request.getString("method")) {
@@ -233,10 +263,10 @@ public class Client {
 //        }
 
 
-//        udpSocket.close();
-//        tcpOut.close();
-//        tcpIn.close();
-//        tcpSocket.close();
+        udpSocket.close();
+        tcpOut.close();
+        tcpIn.close();
+        tcpSocket.close();
     }
 
     /**
@@ -480,9 +510,20 @@ public class Client {
             // Memeriksa keberadaan client di clientsInfo
             if (clientsInfo.containsKey(clientId)) {
                 if (clientsInfo.get(clientId).isAlive() != isAlive) {
+                    // Player is dead
                     clientsInfo.get(clientId).setAlive(isAlive);
                     clientsInfo.get(clientId).setRole(role);
-                    System.out.println("Player " + clientsInfo.get(clientId).getUsername() + " is dead.");
+
+                    if (this.id == clientId) {
+                        // This player
+                        this.isAlive = isAlive;
+                        this.role = role;
+                        System.out.println(commands.get("this_dead"));
+                        System.out.println("Your role is " + role);
+                    } else {
+                        // Other player
+                        System.out.println("Player " + clientsInfo.get(clientId).getUsername() + " is dead.");
+                    }
                 }
             } else {
                 clientsInfo.put(clientId, new ClientInfo(isAlive, address, port, username, role));
@@ -502,6 +543,12 @@ public class Client {
         return request;
     }
 
+    /**
+     * Mengirim response prepare proposal dari acceptor ke proposer
+     * @param datagramPacket paket yang diterima dari proposer
+     * @throws IOException
+     * @throws JSONException
+     */
     private void receivedProposal(DatagramPacket datagramPacket) throws IOException, JSONException {
         JSONObject request = getData(datagramPacket);
         JSONObject response = new JSONObject();
@@ -547,6 +594,12 @@ public class Client {
         sendToClient(response, datagramPacket.getAddress(), datagramPacket.getPort());
     }
 
+    /**
+     * Mengirim response accept proposal dari acceptor ke proposer
+     * @param datagramPacket paket yang diterima dari proposer
+     * @throws IOException
+     * @throws JSONException
+     */
     private void receiveAcceptProposal(DatagramPacket datagramPacket) throws IOException, JSONException {
         JSONObject request = getData(datagramPacket);
         JSONObject response = new JSONObject();
@@ -637,8 +690,7 @@ public class Client {
     private ArrayList<Integer> getProposer() {
         int firstClientId = -1;
         int secondClientId = -1;
-        for (Integer key : clientsInfo.keySet()) {
-            Integer clientId = key;
+        for (Integer clientId : clientsInfo.keySet()) {
             if (clientId > firstClientId) {
                 secondClientId = firstClientId;
                 firstClientId = clientId;
@@ -776,7 +828,7 @@ public class Client {
      */
     private JSONObject requestAcceptProposalToServer() throws JSONException {
         JSONObject request = new JSONObject();
-        request.put("method", "prepare_proposal");
+        request.put("method", "accepted_proposal");
         request.put("kpu_id", leaderId);
         request.put("description", "Kpu is selected");
 
@@ -1175,6 +1227,7 @@ public class Client {
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "time", "role", "friend", "description"));
         if (isRequestKeyValid(keys, request)) {
             response = packResponse("ok", request.getString("method"));
+            phase = request.getString("time");
 
             System.out.print(commands.get("start_game"));
             System.out.println(request.getString("description"));
