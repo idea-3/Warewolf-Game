@@ -329,6 +329,7 @@ public class Server {
                     response = getResponse(request);
                     sendToClient(response);
                 }
+                leaveGame();
 
                 while (!isAllReady()) {
                     // Menunggu sampai semua client ready
@@ -377,7 +378,9 @@ public class Server {
                 clientSocket.close();
             } catch (SocketException e) {
                 e.printStackTrace();
-                clients.remove(this);
+                if (clients.contains(this)) {
+                    clients.remove(this);
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             } catch (JSONException e) {
@@ -595,6 +598,12 @@ public class Server {
             } while (!response.getString("status").equals("ok"));
         }
 
+        private void leaveGame() throws IOException, JSONException {
+            JSONObject request = receiveFromClient();
+            JSONObject response = getResponse(request);
+            sendToClient(response);
+        }
+
         /**
          * Menentukan response server berdasarkan request client
          * @param request request client
@@ -720,6 +729,12 @@ public class Server {
                             username = request.getString("username");
                             udpAddress = request.getString("udp_address");
                             udpPort = request.getString("udp_port");
+                        }
+                        break;
+                    case "leave":
+                        status = "ok";
+                        if (clients.contains(this)) {
+                            clients.remove(this);
                         }
                         break;
                     case "ready":
