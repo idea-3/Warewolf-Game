@@ -31,17 +31,21 @@ public class Client {
     private int id;
     private int sequenceId;
     private int leaderId;
-    private int countReceiveProposal;
-    private int[] promise = {0, -1};
-    private String role;
-    private boolean isProposer;
-    private boolean isPreparedProposer;
-    private boolean isLeader;
-    private boolean isAlive;
-    private boolean isGameOver;
+    public int countReceiveProposal;
+    public int[] promise = {0, -1};
+    public String role;
+    public boolean isProposer;
+    public boolean isPreparedProposer;
+    public boolean isLeader;
+    public boolean isAlive;
+    public boolean isGameOver;
     private String username;
-    private HashMap<Integer, ClientInfo> clientsInfo;
-    private String phase;
+    public HashMap<Integer, ClientInfo> clientsInfo;
+    public String phase;
+    public ArrayList<String> friends;
+    public ArrayList<String> deadPlayer;
+    public String narration;
+    public String winner;
 
     /**
      * Konstruktor
@@ -55,6 +59,8 @@ public class Client {
         tcpIn = new BufferedReader(new InputStreamReader(tcpSocket.getInputStream()));
         tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
+        friends = new ArrayList<>();
+        deadPlayer = new ArrayList<>();
 
         sequenceId = 1;
         leaderId = -1;
@@ -229,7 +235,16 @@ public class Client {
                         voteResultCivilian();
                     } else {
                         if (isAlive) {
-                            voteCivilian();
+                            boolean isSuccess = false;
+                            int voteSequence = 0;
+                            do {
+                                System.out.println(commands.get("vote_civilian"));
+                                String civilianUsername = scan.nextLine();
+                                isSuccess = voteCivilian(civilianUsername);
+                                if (isSuccess == false) {
+                                    voteSequence++;
+                                }
+                            } while (!isSuccess && voteSequence<2);
                         }
                     }
                 } else {
@@ -245,7 +260,12 @@ public class Client {
                         voteResultWerewolf();
                     } else {
                         if (isAlive && role.equals("werewolf")) {
-                            voteWerewolf();
+                            boolean isSuccess = false;
+                            do {
+                                System.out.println(commands.get("vote_werewolf"));
+                                String werewolfUsername = scan.nextLine();
+                                isSuccess = voteWerewolf(werewolfUsername);
+                            } while (!isSuccess);
                         }
                     }
                 }
@@ -312,7 +332,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private JSONObject receiveFromServer() throws JSONException, IOException {
+    public JSONObject receiveFromServer() throws JSONException, IOException {
         JSONObject response;
         String serverString;
         StringBuilder stringBuilder = new StringBuilder();
@@ -344,7 +364,7 @@ public class Client {
      * @return paket yang diterima dalam DatagramPacket
      * @throws IOException
      */
-    private DatagramPacket receiveFromClient() throws IOException {
+    public DatagramPacket receiveFromClient() throws IOException {
         byte[] dataByte = new byte[1024];
         DatagramPacket packet = new DatagramPacket(dataByte, dataByte.length);
         udpSocket.receive(packet);
@@ -359,7 +379,7 @@ public class Client {
      * @return data dari paket UDP dalam JSON
      * @throws JSONException
      */
-    private JSONObject getData(DatagramPacket packet) throws JSONException {
+    public JSONObject getData(DatagramPacket packet) throws JSONException {
         StringBuilder stringBuilder = new StringBuilder();
 
         String dataString = new String(packet.getData());
@@ -375,7 +395,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void joinGame() throws JSONException, IOException {
+    public void joinGame() throws JSONException, IOException {
         System.out.println(commands.get("join"));
         boolean isValid = false;
         do {
@@ -424,7 +444,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void leaveGame() throws JSONException, IOException {
+    public void leaveGame() throws JSONException, IOException {
         System.out.println(commands.get("leave"));
         String decision = scan.nextLine();
         if (decision.equals(answers.get(1))) {
@@ -462,7 +482,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void readyUp() throws IOException, JSONException {
+    public void readyUp() throws IOException, JSONException {
         String decision;
         do {
             System.out.println(commands.get("ready"));
@@ -493,7 +513,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void askClientList() throws JSONException, IOException {
+    public void askClientList() throws JSONException, IOException {
         boolean isSuccess = true;
         do {
             System.out.println(commands.get("client_list"));
@@ -551,9 +571,11 @@ public class Client {
                         this.isAlive = isAlive;
                         this.role = role;
                         System.out.println(commands.get("this_dead"));
+                        deadPlayer.add(username);
                         System.out.println("Your role is " + role);
                     } else {
                         // Other player
+                        deadPlayer.add(clientsInfo.get(clientId).getUsername());
                         System.out.println("Player " + clientsInfo.get(clientId).getUsername() + " is dead.");
                     }
                 }
@@ -581,7 +603,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void receivedProposal(JSONObject request, InetAddress address, int port) throws IOException, JSONException {
+    public void receivedProposal(JSONObject request, InetAddress address, int port) throws IOException, JSONException {
         JSONObject response = new JSONObject();
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id"));
         if (isRequestKeyValid(keys, request)) {
@@ -631,7 +653,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void receiveAcceptProposal(JSONObject request, InetAddress address, int port) throws IOException, JSONException {
+    public void receiveAcceptProposal(JSONObject request, InetAddress address, int port) throws IOException, JSONException {
         JSONObject response = new JSONObject();
 
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id", "kpu_id"));
@@ -659,7 +681,7 @@ public class Client {
         sendToClient(response, address, port);
     }
 
-    private void setIsProposer() {
+    public void setIsProposer() {
         ArrayList<Integer> proposerClientId = getProposer();
         int i = 0;
         boolean isFound = false;
@@ -682,7 +704,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void prepareProposalToClient() throws JSONException, IOException {
+    public void prepareProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("prepare_proposal_client"));
         JSONObject request = requestPrepareProposalToClient();
         ArrayList<Integer> acceptorClientId = getAcceptor();
@@ -791,7 +813,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void acceptProposalToClient() throws JSONException, IOException {
+    public void acceptProposalToClient() throws JSONException, IOException {
         System.out.println(commands.get("accept_proposal_client"));
         JSONObject request = requestAcceptProposal();
         ArrayList<Integer> acceptorClientId = getAcceptor();
@@ -846,7 +868,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void acceptProposalToServer() throws JSONException, IOException {
+    public void acceptProposalToServer() throws JSONException, IOException {
         boolean isSuccess = true;
         do {
             System.out.println(commands.get("accept_proposal_server"));
@@ -885,28 +907,27 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void voteWerewolf() throws JSONException, IOException {
+    public boolean voteWerewolf(String werewolfUsername) throws JSONException, IOException {
         boolean isSuccess = false;
-        do {
-            System.out.println(commands.get("vote_werewolf"));
-            String werewolfUsername = scan.nextLine();
 
-            int clientId = getClientIdByUsername(werewolfUsername);
-            JSONObject request = requestVoteWerewolf(clientId);
-            sendToClient(request, clientsInfo.get(leaderId).getAddress(), clientsInfo.get(leaderId).getPort());
 
-            JSONObject response = getData(receiveFromClient());
-            System.out.println(response.getString("description"));
-            String status =  response.getString("status");
-            switch (status) {
-                case "ok":
-                    isSuccess = true;
-                    break;
-                default:
-                    System.out.println(commands.get("vote_werewolf_not_success"));
-                    break;
-            }
-        } while (!isSuccess);
+        int clientId = getClientIdByUsername(werewolfUsername);
+        JSONObject request = requestVoteWerewolf(clientId);
+        sendToClient(request, clientsInfo.get(leaderId).getAddress(), clientsInfo.get(leaderId).getPort());
+
+        JSONObject response = getData(receiveFromClient());
+        System.out.println(response.getString("description"));
+        String status =  response.getString("status");
+        switch (status) {
+            case "ok":
+                isSuccess = true;
+                break;
+            default:
+                System.out.println(commands.get("vote_werewolf_not_success"));
+                break;
+        }
+
+        return isSuccess;
     }
 
     /**
@@ -953,7 +974,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void voteResultWerewolf() throws JSONException, IOException {
+    public void voteResultWerewolf() throws JSONException, IOException {
         boolean isSuccess = false;
         do {
             int selfIsWerewolf = 0;
@@ -1109,30 +1130,26 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    private void voteCivilian() throws JSONException, IOException {
-        int voteSequence = 0;
+    public boolean voteCivilian(String civilianUsername) throws JSONException, IOException {
         boolean isSuccess = false;
-        do {
-            System.out.println(commands.get("vote_civilian"));
-            String civilianUsername = scan.nextLine();
 
-            int clientId = getClientIdByUsername(civilianUsername);
-            JSONObject request = requestVoteCivilian(clientId);
-            sendToClient(request, clientsInfo.get(leaderId).getAddress(), clientsInfo.get(leaderId).getPort());
 
-            JSONObject response = getData(receiveFromClient());
-            System.out.println(response.getString("description"));
-            String status =  response.getString("status");
-            switch (status) {
-                case "ok":
-                    isSuccess = true;
-                    break;
-                default:
-                    System.out.println(commands.get("vote_civilian_not_success"));
-                    voteSequence++;
-                    break;
-            }
-        } while (!isSuccess && voteSequence<2);
+        int clientId = getClientIdByUsername(civilianUsername);
+        JSONObject request = requestVoteCivilian(clientId);
+        sendToClient(request, clientsInfo.get(leaderId).getAddress(), clientsInfo.get(leaderId).getPort());
+
+        JSONObject response = getData(receiveFromClient());
+        System.out.println(response.getString("description"));
+        String status =  response.getString("status");
+        switch (status) {
+            case "ok":
+                isSuccess = true;
+                break;
+            default:
+                System.out.println(commands.get("vote_civilian_not_success"));
+                break;
+        }
+        return isSuccess;
     }
 
     /**
@@ -1149,7 +1166,7 @@ public class Client {
         return request;
     }
 
-    private void voteResultCivilian() throws IOException, JSONException {
+    public void voteResultCivilian() throws IOException, JSONException {
         int voteSequence = 0;
         boolean isSuccess = false;
         do {
@@ -1255,7 +1272,7 @@ public class Client {
         }
     }
 
-    private void startGame() throws IOException, JSONException {
+    public void startGame() throws IOException, JSONException {
         JSONObject request = receiveFromServer();
         JSONObject response;
         switch (request.getString("role")) {
@@ -1277,9 +1294,10 @@ public class Client {
 
             if (request.getString("role").equals("werewolf")) {
                 System.out.println("Your friends: ");
-                JSONArray friends = request.getJSONArray("friend");
-                for (int i = 0; i < friends.length(); i++) {
-                    System.out.println(friends.getString(i));
+                JSONArray friendsJSON = request.getJSONArray("friend");
+                for (int i = 0; i < friendsJSON.length(); i++) {
+                    System.out.println(friendsJSON.getString(i));
+                    friends.add(friendsJSON.getString(i));
                 }
             }
 
@@ -1295,7 +1313,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void changePhase(JSONObject request) throws IOException, JSONException {
+    public void changePhase(JSONObject request) throws IOException, JSONException {
         JSONObject response;
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "time", "days", "description"));
 
@@ -1304,6 +1322,7 @@ public class Client {
 
             System.out.print(commands.get("change_phase"));
             System.out.println(request.getString("description"));
+            narration = request.getString("description");
             phase = request.getString("time");
 
             //TODO: check when change phase is failed
@@ -1318,7 +1337,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void voteNow() throws IOException, JSONException {
+    public void voteNow() throws IOException, JSONException {
         JSONObject request = receiveFromServer();
         JSONObject response;
 
@@ -1341,7 +1360,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void gameOver(JSONObject request) throws IOException, JSONException {
+    public void gameOver(JSONObject request) throws IOException, JSONException {
 
         JSONObject response;
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "winner", "description"));
@@ -1352,6 +1371,7 @@ public class Client {
             System.out.println(request.getString("description"));
             System.out.print(commands.get("game_over"));
             System.out.println(request.getString("winner"));
+            winner = request.getString("winner");
 
             isGameOver = true;
             //TODO: check when game over is failed
@@ -1368,7 +1388,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    private void getLeaderSelected() throws IOException, JSONException {
+    public void getLeaderSelected() throws IOException, JSONException {
         JSONObject request = receiveFromServer();
         JSONObject response;
 
