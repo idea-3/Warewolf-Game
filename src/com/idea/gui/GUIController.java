@@ -55,16 +55,10 @@ public class GUIController {
 
         startPanel.loginButton.addActionListener(e -> {
             try {
-//                hostName = startPanel.ipHostNameTextField.getText();
-//                port = Integer.parseInt(startPanel.serverPortTextField.getText());
-//                udpPort = Integer.parseInt(startPanel.udpPortTextField.getText());
-//                username = startPanel.usernameTextField.getText();
-
-                hostName = "DEVINA-PC";
-                port = 2000;
-                java.util.Random rand = new Random();
-                udpPort = rand.nextInt((3100-3000) +1) +3000;
-                username = String.valueOf(udpPort);
+                hostName = startPanel.ipHostNameTextField.getText();
+                port = Integer.parseInt(startPanel.serverPortTextField.getText());
+                udpPort = Integer.parseInt(startPanel.udpPortTextField.getText());
+                username = startPanel.usernameTextField.getText();
 
                 client = new Client(hostName, port, udpPort);
 
