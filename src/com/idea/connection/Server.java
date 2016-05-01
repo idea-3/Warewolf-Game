@@ -224,7 +224,7 @@ public class Server {
         int countWerewolf = 0, countCivilian = 0;
 
         for (int i = 0; i < numClient; i++) {
-            if (clients.get(i).isAlive()) {
+            if (clients.get(i).isAlive) {
                 if (clients.get(i).role.equals("werewolf")) {
                     countWerewolf++;
                 } else {
@@ -244,6 +244,17 @@ public class Server {
         }
     }
 
+    private void killClient(int clientId) {
+        int numClient = clients.size();
+
+        for (int i = 0; i < numClient; i++) {
+            if (clients.get(i).clientId == clientId) {
+                clients.get(i).isAlive = false;
+                break;
+            }
+        }
+    }
+
     /**
      * Controller untuk setiap client yang terhubung dengan server
      */
@@ -254,7 +265,7 @@ public class Server {
         private boolean isWerewolf = false;
         private BufferedReader in;
         private int clientId;
-        private int countDay = 0;
+        private int countDay = 1;
         private PrintWriter out;
         private Socket clientSocket;
         private String role;
@@ -278,9 +289,9 @@ public class Server {
          * @param response pesan yang akan dikirim
          */
         public void sendToClient(JSONObject response) {
-            System.out.println("Response to client: " + response);
             out.println(response.toString());
             out.flush();
+            System.out.println("Response to client: " + response);
         }
 
         /**
@@ -297,7 +308,7 @@ public class Server {
             clientString = in.readLine();
             stringBuilder.append(clientString);
             request = new JSONObject(stringBuilder.toString());
-            System.out.println("Receive from server: " + request);
+            System.out.println("Receive from client: " + request);
 
             return request;
         }
@@ -335,12 +346,16 @@ public class Server {
 
                 do {
                     if (isFirstDay) {
-                        changePhase("day", dayNarration);
                         isFirstDay = false;
+                    } else {
+                        changePhase("day", dayNarration);
+                        handleListClientRequest();
                     }
+
                     isLeaderChosen = false;
                     handleListClientRequest();
                     setProposer();
+
                     if (!isProposer) {
                         acceptLeader();
                         isLeaderChosen = true;
@@ -357,6 +372,10 @@ public class Server {
                 } while (!isGameOver());
                 isGameRunning = false;
                 announceGameOver(lastWinner);
+
+                in.close();
+                out.close();
+                clientSocket.close();
             } catch (SocketException e) {
                 e.printStackTrace();
                 clients.remove(this);
@@ -367,13 +386,6 @@ public class Server {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-//                    try {
-//                        in.close();
-//                        out.close();
-//                        clientSocket.close();
-//                    } catch (IOException e) {
-//                        e.printStackTrace();
-//                    }
         }
 
         private void startGame() throws JSONException, IOException {
@@ -516,8 +528,11 @@ public class Server {
             isVoteDone = false;
             do {
                 countVote++;
-                vote(phase);
-                handleListClientRequest();
+                if (isAlive) {
+                    Thread.sleep(1000);
+                    vote(phase);
+                    handleListClientRequest();
+                }
                 isLeaderJobDone = false;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
@@ -531,8 +546,8 @@ public class Server {
                     while (!isLeaderJobDone) {
                         Thread.sleep(1000);
                     }
-                    handleListClientRequest();
                 }
+                handleListClientRequest();
             } while (!isVoteDone);
         }
 
@@ -543,8 +558,11 @@ public class Server {
 
             isVoteDone = false;
             do {
-                vote(phase);
-                handleListClientRequest();
+                if (isAlive && role.equals("werewolf")) {
+                    Thread.sleep(1000);
+                    vote(phase);
+                    handleListClientRequest();
+                }
                 isLeaderJobDone = false;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
@@ -555,7 +573,6 @@ public class Server {
                     while (!isLeaderJobDone) {
                         Thread.sleep(1000);
                     }
-                    handleListClientRequest();
                 }
             } while (!isVoteDone);
         }
@@ -720,9 +737,7 @@ public class Server {
                     case "vote_result_civilian":
                     case "vote_result_werewolf":
                         status = "ok";
-                        if (clientId == request.getInt("player_killed")) {
-                            isAlive = false;
-                        }
+                        killClient(request.getInt("player_killed"));
                         isVoteDone = true;
                         break;
                     case "vote_result":

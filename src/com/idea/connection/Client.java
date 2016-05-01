@@ -19,8 +19,8 @@ public class Client {
     public static final HashMap<String, List<String>> clientToClientRequestKeys = initializedClientToClientRequestKeys();
     public static final HashMap<String, String> commands = initializedCommands();
     public static final HashMap<Integer, String> answers = initializedAnswerChoices();
-    public static final int civilianNum = 2;
-    public static final int werewolfNum = 4;
+    public static final int civilianNum = 4;
+    public static final int werewolfNum = 2;
 
     private BufferedReader tcpIn;
     private PrintWriter tcpOut;
@@ -56,7 +56,7 @@ public class Client {
         tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
 
-        sequenceId = 0;
+        sequenceId = 1;
         leaderId = -1;
         role = "";
         isProposer = false;
@@ -84,7 +84,7 @@ public class Client {
         requestKeys.put("client_address", keys);
 
         keys = Arrays.asList("method", "kpu_id", "description");
-        requestKeys.put("prepare_proposal", keys);
+        requestKeys.put("accepted_proposal", keys);
 
         keys = Arrays.asList("method", "vote_status", "player_killed", "vote_result");
         requestKeys.put("vote_result_werewolf", keys);
@@ -145,14 +145,15 @@ public class Client {
         commands.put("prepare_me_leader", "I am prepared to be a leader...");
         commands.put("accept_me_leader", "I am a leader...");
         commands.put("accept_proposal_server", "Send leader information to server...");
-        commands.put("vote_werewolf", "Who do you want to kill?");
+        commands.put("vote_werewolf", "Input the username that you want to kill:");
         commands.put("vote_werewolf_not_success", "Vote werewolf is not success");
         commands.put("count_vote", "Counting vote from other players...");
-        commands.put("vote_civilian", "Who do you want to kill?");
+        commands.put("vote_civilian", "Input the username that you want to kill:");
         commands.put("vote_civilian_not_success", "Vote civilian is not success");
         commands.put("start_game", "Game is starting...");
         commands.put("change_phase", "Phase change...");
         commands.put("game_over", "Game over! The winner is ");
+        commands.put("civilian_wait", "Dream tight. Bye bye. I love you muach :* :*");
 
         return commands;
     }
@@ -169,7 +170,7 @@ public class Client {
      * Menjalankan client
      * @throws JSONException
      * @throws IOException
-     */
+    */
     public void run() throws JSONException, IOException, InterruptedException {
         System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
         System.out.println("Client port: " + udpSocket.getLocalPort());
@@ -188,11 +189,11 @@ public class Client {
             isPreparedProposer = false;
             promise[0] = 0;
             promise[1] = -1;
-            System.out.println("IsProposer: " + isProposer);
             if (isProposer) {
                 // Mengirim proposal ke acceptor
                 prepareProposalToClient();
                 if (isPreparedProposer) {
+                    Thread.sleep(1000);
                     acceptProposalToClient();
                 }
             } else {
@@ -216,35 +217,58 @@ public class Client {
             getLeaderSelected();
 
             // Voting siapa yang akan dibunuh
-            voteNow();
-            askClientList();
-            if (phase.equals("day")) {
-                if (isLeader) {
-                    voteResultCivilian();
-                } else {
+            do {
+                if (phase.equals("day")) {
                     if (isAlive) {
-                        voteCivilian();
+                        voteNow();
+                        Thread.sleep(1000);
+                        askClientList();
+                    }
+                    Thread.sleep(1000);
+                    if (isLeader) {
+                        voteResultCivilian();
+                    } else {
+                        if (isAlive) {
+                            voteCivilian();
+                        }
+                    }
+                } else {
+                    if (isAlive && role.equals("werewolf")) {
+                        voteNow();
+                        Thread.sleep(1000);
+                        askClientList();
+                    } else {
+                        System.out.println(commands.get("civilian_wait"));
+                    }
+                    Thread.sleep(1000);
+                    if (isLeader) {
+                        voteResultWerewolf();
+                    } else {
+                        if (isAlive && role.equals("werewolf")) {
+                            voteWerewolf();
+                        }
                     }
                 }
-            } else {
-                if (isLeader) {
-                    voteResultWerewolf();
-                } else {
-                    if (isAlive) {
-                        voteWerewolf();
-                    }
-                }
-            }
 
-            JSONObject request = receiveFromServer();
-            switch (request.getString("method")) {
-                case "change_phase":
-                    changePhase(request);
-                    break;
-                case "game_over":
-                    gameOver(request);
-                    break;
-            }
+                if (phase.equals("day")) {
+                    Thread.sleep(1000);
+                    askClientList();
+                    Thread.sleep(1000);
+                }
+                JSONObject request = receiveFromServer();
+                switch (request.getString("method")) {
+                    case "change_phase":
+                        changePhase(request);
+                        if (phase.equals("day")) {
+                            Thread.sleep(1000);
+                            askClientList();
+                        }
+                        break;
+                    case "game_over":
+                        gameOver(request);
+                        break;
+                }
+            } while (phase.equals("night") && !isGameOver);
         }
 
 //        if (id == 0) {
@@ -296,6 +320,7 @@ public class Client {
         serverString = tcpIn.readLine();
         stringBuilder.append(serverString);
         response = new JSONObject(stringBuilder.toString());
+        System.out.println("Received from server: " + response);
 
         return response;
     }
@@ -441,8 +466,8 @@ public class Client {
         String decision;
         do {
             System.out.println(commands.get("ready"));
-            decision = scan.nextLine();
-
+            ///decision = scan.nextLine();
+            decision = "y";
         } while (!decision.equals(answers.get(1)));
 
         JSONObject request = requestReadyUp();
@@ -570,7 +595,7 @@ public class Client {
             } else if (promise[0] < proposalId.getInt(0)) {
                 response.put("status", "ok");
                 response.put("description", "accepted");
-                response.put("previous_accepted", leaderId);
+                response.put("previous_accepted", promise[1]);
 
                 promise[0] = proposalId.getInt(0);
                 promise[1] = proposalId.getInt(1);
@@ -583,7 +608,7 @@ public class Client {
                 if (promise[1] < proposalId.getInt(1)) {
                     response.put("status", "ok");
                     response.put("description", "accepted");
-                    response.put("previous_accepted", leaderId);
+                    response.put("previous_accepted", promise[1]);
 
                     promise[1] = proposalId.getInt(1);
                 } else if (promise[1] > proposalId.getInt(0)){
@@ -621,11 +646,10 @@ public class Client {
                     response.put("description", "accepted");
 
                     promise[1] = proposalId.getInt(1);
+                    leaderId = promise[1];
                 } else if (promise[1] > proposalId.getInt(0)){
                     response.put("status", "fail");
                     response.put("description", "rejected");
-
-                    countReceiveProposal--;
                 }
             }
         } else {
@@ -796,6 +820,7 @@ public class Client {
                 System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
             }
         }
+        sequenceId += 1;
         if (okProposal == receivedPacket) {
             isLeader = true;
             System.out.println(commands.get("accept_me_leader"));
@@ -811,7 +836,7 @@ public class Client {
         JSONObject request = new JSONObject();
         request.put("method", "accept_proposal");
         request.put("proposal_id", getProposalId());
-        request.put("kpu_id", sequenceId); // TODO: kpu_id
+        request.put("kpu_id", id); // TODO: kpu_id
 
         return request;
     }
@@ -868,7 +893,7 @@ public class Client {
 
             int clientId = getClientIdByUsername(werewolfUsername);
             JSONObject request = requestVoteWerewolf(clientId);
-            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            sendToClient(request, clientsInfo.get(leaderId).getAddress(), clientsInfo.get(leaderId).getPort());
 
             JSONObject response = getData(receiveFromClient());
             System.out.println(response.getString("description"));
@@ -939,15 +964,14 @@ public class Client {
 
                 int clientIdVoted = getClientIdByUsername(werewolfUsername);
                 int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
-                clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
+                clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
                 selfIsWerewolf = 1;
             }
 
             // Waiting others to vote
             int votedClientNum = 0;
             while (votedClientNum < werewolfNum-getDeadClientsNum("werewolf")-selfIsWerewolf) {
-                JSONObject voteRequest = getData(receiveFromClient());
-                handleClientVote(voteRequest);
+                handleClientVote(receiveFromClient());
                 votedClientNum++;
             }
 
@@ -966,21 +990,23 @@ public class Client {
         } while (!isSuccess);
     }
 
-    private void handleClientVote(JSONObject voteRequest) throws JSONException, IOException {
+    private void handleClientVote(DatagramPacket packet) throws JSONException, IOException {
+        JSONObject voteRequest = getData(packet);
         int voteId = voteRequest.getInt("player_id");
-        JSONObject response;
+        JSONObject response = new JSONObject();
 
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "player_id"));
         if (isRequestKeyValid(keys, voteRequest)) {
             int voteNum = clientsInfo.get(voteId).getVoteNum();
             clientsInfo.get(voteId).setVoteNum(voteNum+1);
 
-            response = packResponse("ok", "Kill werewolf");
+            response.put("status", "ok");
+            response.put("description", "Vote is accepted");
         } else {
             response = packResponse("error", "Kill werewolf");
         }
-        sendToClient(response, clientsInfo.get(voteId).getAddress(), clientsInfo.get(voteId).getPort());
-    }
+        sendToClient(response, packet.getAddress(), packet.getPort());
+}
 
     private void emptyClientsInfoVoteNum() {
         for (ClientInfo clientInfo : clientsInfo.values()) {
@@ -1092,9 +1118,9 @@ public class Client {
 
             int clientId = getClientIdByUsername(civilianUsername);
             JSONObject request = requestVoteCivilian(clientId);
-            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            sendToClient(request, clientsInfo.get(leaderId).getAddress(), clientsInfo.get(leaderId).getPort());
 
-            JSONObject response = receiveFromServer();
+            JSONObject response = getData(receiveFromClient());
             System.out.println(response.getString("description"));
             String status =  response.getString("status");
             switch (status) {
@@ -1129,21 +1155,18 @@ public class Client {
         do {
             int selfIsCivilian = 0;
             // Vote for itself if I am a civilian
-            if (role.equals("civilian")) {
-                System.out.println(commands.get("vote_civilian"));
-                String playerUsername = scan.nextLine();
+            System.out.println(commands.get("vote_civilian"));
+            String playerUsername = scan.nextLine();
 
-                int clientIdVoted = getClientIdByUsername(playerUsername);
-                int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
-                clientsInfo.get(clientIdVoted).setVoteNum(voteNum);
-                selfIsCivilian = 1;
-            }
+            int clientIdVoted = getClientIdByUsername(playerUsername);
+            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+            clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
+            selfIsCivilian = 1;
 
             // Waiting others to vote
             int votedClientNum = 0;
-            while (votedClientNum < civilianNum-getDeadClientsNum("civilian")-selfIsCivilian) {
-                JSONObject voteRequest = getData(receiveFromClient());
-                handleClientVote(voteRequest);
+            while (votedClientNum < getAliveClientsNum()-getDeadClientsNum("civilian")-selfIsCivilian) {
+                handleClientVote(receiveFromClient());
                 votedClientNum++;
             }
 
@@ -1153,7 +1176,7 @@ public class Client {
             sendToServer(playerKilledRequest);
             JSONObject response = receiveFromServer();
             System.out.println(response.getString("description"));
-            if (response.getString("ok").equals("ok") && getHighestVoteClientId()!=-1) {
+            if (response.getString("status").equals("ok") && getHighestVoteClientId()!=-1) {
                 isSuccess = true;
             } else {
                 voteSequence++;
@@ -1281,6 +1304,7 @@ public class Client {
 
             System.out.print(commands.get("change_phase"));
             System.out.println(request.getString("description"));
+            phase = request.getString("time");
 
             //TODO: check when change phase is failed
         } else {
@@ -1369,7 +1393,6 @@ public class Client {
      */
     private JSONArray getProposalId() {
         JSONArray proposalIdArray = new JSONArray();
-        sequenceId += 1;
         proposalIdArray.put(sequenceId);
         proposalIdArray.put(id);
 
