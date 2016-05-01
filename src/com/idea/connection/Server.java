@@ -381,7 +381,7 @@ public class Server {
             }
 
             request.put("method", "start");
-            request.put("time", "night");
+            request.put("time", "day");
             request.put("role", role);
             request.put("friend", friends);
             request.put("description", "game is started");
