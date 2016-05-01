@@ -1356,12 +1356,9 @@ public class Client {
         return proposalIdArray;
     }
 
+    private static final int[] port = {3001,3002,3003,3004,3005,3006};
     public static void main(String[] args) throws IOException, JSONException {
         Scanner scan = new Scanner(System.in);
-
-//        String hostName = "10.5.24.104";
-//        int port = 8080;
-//        int udpPort = 8000;
 
         System.out.print("Input server IP host name: ");
         ///String hostName = scan.nextLine();
@@ -1370,7 +1367,10 @@ public class Client {
         ///int port = Integer.parseInt(scan.nextLine());
         int port = 2000;
         System.out.print("Input UDP port: ");
-        int udpPort = Integer.parseInt(scan.nextLine());
+        ///int udpPort = Integer.parseInt(scan.nextLine());
+        java.util.Random rand = new Random();
+        int udpPort = rand.nextInt((3100-3000) +1) +3000;
+        System.out.println(udpPort);
         System.out.println(InetAddress.getLocalHost().getHostAddress());
 
         System.out.println("Connecting to " + hostName + " on port " + port);
