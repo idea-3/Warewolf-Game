@@ -411,7 +411,7 @@ public class Server {
 
             if (role.equals("werewolf")) {
                 for (int i = 0; i < clients.size(); i++) {
-                    if (clients.get(i).isWerewolf) {
+                    if ((clients.get(i).isWerewolf) && !(clients.get(i).username.equals(this.username))) {
                         friends.add(clients.get(i).username);
                     }
                 }
