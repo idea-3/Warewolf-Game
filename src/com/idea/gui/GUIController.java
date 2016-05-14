@@ -125,6 +125,7 @@ public class GUIController {
     public void playGame() throws IOException, JSONException, InterruptedException {
         Thread.sleep(1000);
 
+        boolean firstDay = true;
         mainPanel.roleLabel.setText("Your role is " + client.role);
         mainPanel.narration.setText("The day has came. All villagers wake up.");
         ArrayList<JLabel> friendsArrayLabel = new ArrayList<>();
@@ -165,7 +166,11 @@ public class GUIController {
 
         while (!client.isGameOver) {
             // Pemilihan leader
-            client.askClientList();
+            if (firstDay) {
+                firstDay = false;
+            } else {
+                client.askClientList();
+            }
             client.setIsProposer();
             client.isLeader = false;
             client.isPreparedProposer = false;
