@@ -196,9 +196,6 @@ public class GUIController {
             do {
                 if (client.phase.equals("day")) {
                     if (client.isAlive) {
-                        voteNow = false;
-                        BackgroundTask2 task2 = new BackgroundTask2();
-                        task2.execute();
                         Thread.sleep(1000);
                         client.askClientList();
                     }
@@ -233,9 +230,7 @@ public class GUIController {
                     }
                 } else {
                     if (client.isAlive && client.role.equals("werewolf")) {
-                        voteNow = false;
-                        BackgroundTask2 task2 = new BackgroundTask2();
-                        task2.execute();
+
                         Thread.sleep(1000);
                         client.askClientList();
                     } else {
@@ -333,21 +328,6 @@ public class GUIController {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-        }
-
-    }
-
-    private class BackgroundTask2 extends SwingWorker<Void, Void> {
-
-        @Override
-        protected Void doInBackground() throws Exception {
-            client.voteNow();
-            return null;
-        }
-
-        @Override
-        public void done() {
-            voteNow = true;
         }
 
     }
