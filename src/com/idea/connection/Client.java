@@ -175,14 +175,12 @@ public class Client {
                 // Mengirim proposal ke acceptor
                 udpSocket.setSoTimeout(5000);
                 prepareProposalToClient();
-                if (isPreparedProposer) {
-                    Thread.sleep(1000);
-                    acceptProposalToClient();
-                }
+                Thread.sleep(1000);
+                acceptProposalToClient();
                 udpSocket.setSoTimeout(0);
             } else {
                 // Menerima proposal dari proposer
-                countReceiveProposal = 3;
+                countReceiveProposal = 4;
                 do {
                     DatagramPacket datagramPacket = receiveFromClient();
                     JSONObject data = getData(datagramPacket);
@@ -682,6 +680,13 @@ public class Client {
                     response.put("status", "fail");
                     response.put("description", "rejected");
                 }
+            } else {
+                response.put("status", "ok");
+                response.put("description", "accepted");
+
+                promise[0] = proposalId.getInt(0);
+                promise[1] = proposalId.getInt(1);
+                leaderId = promise[1];
             }
         } else {
             response = packResponse("error", request.getString("method"));
@@ -742,11 +747,9 @@ public class Client {
                         okProposal++;
                     } else {
                         isPreparedProposer = false;
-                        sequenceId += 1;
                     }
                 } else {
                     isPreparedProposer = false;
-                    sequenceId += 1;
                     System.out.println(senderUsername + ": " + description);
                 }
             } catch(SocketTimeoutException e){
@@ -862,6 +865,7 @@ public class Client {
             try {
                 // Menunggu paket sampai seluruh acceptor mengirim response
                 DatagramPacket packet = receiveFromClient();
+                packets.add(packet);
                 JSONObject response = getData(packet);
                 System.out.println("Response converted to JSON: " + response);
                 receivedPacket++;
@@ -898,10 +902,6 @@ public class Client {
             }
         }
         sequenceId += 1;
-        if (okProposal == receivedPacket) {
-            isLeader = true;
-            System.out.println(commands.get("accept_me_leader"));
-        }
     }
 
     /**
@@ -1481,6 +1481,10 @@ public class Client {
             int leaderIdByServer = request.getInt("kpu_id");
             if (request.getString("method").equals("kpu_selected") && clientsInfo.get(leaderIdByServer)!=null) {
                 leaderId = leaderIdByServer;
+                if (leaderId == id) {
+                    isLeader = true;
+                    System.out.println(commands.get("accept_me_leader"));
+                }
                 response = packResponse("ok", "kpu_selected");
             } else {
                 response = packResponse("fail", "kpu_selected");

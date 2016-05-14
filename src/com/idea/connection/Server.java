@@ -501,8 +501,9 @@ public class Server {
          * @throws IOException
          * @throws JSONException
          */
-        private void handleListClientRequest() throws IOException, JSONException {
+        private void handleListClientRequest() throws IOException, JSONException, InterruptedException {
             JSONObject request = receiveFromClient();
+            Thread.sleep(1000);
             JSONObject response = getResponse(request);
             sendToClient(response);
         }
