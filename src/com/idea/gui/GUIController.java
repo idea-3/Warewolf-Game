@@ -71,9 +71,7 @@ public class GUIController {
 
                 client.joinGame();
                 showReadyOptionPane();
-            } catch (IOException e1) {
-                e1.printStackTrace();
-            } catch (JSONException e1) {
+            } catch (IOException | JSONException e1) {
                 e1.printStackTrace();
             }
         });
@@ -116,9 +114,7 @@ public class GUIController {
                 BackgroundTask1 task = new BackgroundTask1();
                 task.execute();
 
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (JSONException e) {
+            } catch (IOException | JSONException e) {
                 e.printStackTrace();
             }
         } else {
@@ -364,19 +360,24 @@ public class GUIController {
                 }
 
                 request = client.receiveFromServer();
-                switch (request.getString("method")) {
-                    case "change_phase":
-                        client.changePhase(request);
+                if (request.getString("method").equals("game_over")) {
+                    client.gameOver(request);
+                    mainPanel.narration.setText("Game over! The winner is " + client.winner);
+                } else {
+                    switch (request.getString("method")) {
+                        case "change_phase":
+                            client.changePhase(request);
 //                        if (phase.equals("day")) {
-                        Thread.sleep(1000);
-                        client.askClientList();
+                            Thread.sleep(1000);
+                            client.askClientList();
 //                        }
-                        mainPanel.narration.setText(client.narration);
-                        break;
-                    case "game_over":
-                        client.gameOver(request);
-                        mainPanel.narration.setText("Game over! The winner is " + client.winner);
-                        break;
+                            mainPanel.narration.setText(client.narration);
+                            break;
+                        case "game_over":
+                            client.gameOver(request);
+                            mainPanel.narration.setText("Game over! The winner is " + client.winner);
+                            break;
+                    }
                 }
             } while (client.phase.equals("night") && !client.isGameOver);
         }
@@ -397,11 +398,7 @@ public class GUIController {
             waitingDialog.dispose();
             try {
                 playGame();
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (JSONException e) {
-                e.printStackTrace();
-            } catch (InterruptedException e) {
+            } catch (IOException | JSONException | InterruptedException e) {
                 e.printStackTrace();
             }
         }
