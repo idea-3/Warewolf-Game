@@ -21,9 +21,9 @@ public class Server {
     private ArrayList<ClientController> clients;
     private boolean isDecideRoleDone;
     private boolean isGameRunning = false;
-    private boolean isLeaderChosen;
     private boolean isLeaderJobDone;
     private boolean isVoteDone;
+    private int isLeaderChosen;
     private int leaderId = -1;
     private int nextClientId = 0;
     private ServerSocket serverSocket;
@@ -184,6 +184,17 @@ public class Server {
     }
 
     /**
+     * Mengecek isLeaderJobDone
+     * @return true jika isLeaderJobDone true
+     * @throws InterruptedException
+     */
+    private boolean checkLeaderJobDone() throws InterruptedException {
+        Thread.sleep(1000);
+        boolean leaderJobDone = isLeaderJobDone;
+        return leaderJobDone;
+    }
+
+    /**
      * Memeriksa apakah username telah ada atau tidak
      * @return true jika username telah ada
      */
@@ -291,7 +302,7 @@ public class Server {
         public void sendToClient(JSONObject response) {
             out.println(response.toString());
             out.flush();
-            System.out.println("Response to client: " + response);
+            System.out.println("Response to client " + username + ": " + response);
         }
 
         /**
@@ -308,7 +319,7 @@ public class Server {
             clientString = in.readLine();
             stringBuilder.append(clientString);
             request = new JSONObject(stringBuilder.toString());
-            System.out.println("Receive from client: " + request);
+            System.out.println("Received from client " + username + ": " + request);
 
             return request;
         }
@@ -329,10 +340,10 @@ public class Server {
                     response = getResponse(request);
                     sendToClient(response);
                 }
+                leaveGame();
 
                 while (!isAllReady()) {
                     // Menunggu sampai semua client ready
-
                 }
 
                 if (clientId == clients.get(0).clientId) {
@@ -352,23 +363,27 @@ public class Server {
                         handleListClientRequest();
                     }
 
-                    isLeaderChosen = false;
+                    isLeaderChosen = 0;
                     handleListClientRequest();
                     setProposer();
 
                     if (!isProposer) {
                         acceptLeader();
-                        isLeaderChosen = true;
-                    } else {
-                        while (!isLeaderChosen) {
-                            Thread.sleep(1000);
-                        }
+                        isLeaderChosen++;
+                    }
+                    while (isLeaderChosen < clients.size() - 2) {
+                        Thread.sleep(1000);
                     }
                     announceLeader();
                     handleDayVote();
 
-                    changePhase("night", nightNarration);
-                    handleNightVote();
+                    if (!isGameOver()) {
+                        sendDummyChangePhase("night", nightNarration);
+                        changePhase("night", nightNarration);
+                        handleListClientRequest();
+                        handleNightVote();
+                        sendDummyChangePhase("day", dayNarration);
+                    }
                 } while (!isGameOver());
                 isGameRunning = false;
                 announceGameOver(lastWinner);
@@ -378,7 +393,9 @@ public class Server {
                 clientSocket.close();
             } catch (SocketException e) {
                 e.printStackTrace();
-                clients.remove(this);
+                if (clients.contains(this)) {
+                    clients.remove(this);
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             } catch (JSONException e) {
@@ -388,6 +405,16 @@ public class Server {
             }
         }
 
+        private void sendDummyChangePhase(String time, String narration) throws JSONException {
+            JSONObject request = new JSONObject();
+
+            request.put("method", "change_phase");
+            request.put("time", time);
+            request.put("days", countDay);
+            request.put("description", narration);
+            sendToClient(request);
+        }
+
         private void startGame() throws JSONException, IOException {
             JSONObject request = new JSONObject();
             JSONObject response;
@@ -395,7 +422,7 @@ public class Server {
 
             if (role.equals("werewolf")) {
                 for (int i = 0; i < clients.size(); i++) {
-                    if (clients.get(i).isWerewolf) {
+                    if ((clients.get(i).isWerewolf) && !(clients.get(i).username.equals(this.username))) {
                         friends.add(clients.get(i).username);
                     }
                 }
@@ -485,8 +512,9 @@ public class Server {
          * @throws IOException
          * @throws JSONException
          */
-        private void handleListClientRequest() throws IOException, JSONException {
+        private void handleListClientRequest() throws IOException, JSONException, InterruptedException {
             JSONObject request = receiveFromClient();
+            Thread.sleep(1000);
             JSONObject response = getResponse(request);
             sendToClient(response);
         }
@@ -528,7 +556,7 @@ public class Server {
             isVoteDone = false;
             do {
                 countVote++;
-                if (isAlive) {
+                if (isAlive || clientId == leaderId) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
@@ -543,11 +571,11 @@ public class Server {
                     sendToClient(response);
                     isLeaderJobDone = true;
                 } else {
-                    while (!isLeaderJobDone) {
-                        Thread.sleep(1000);
+                    while (!checkLeaderJobDone()) {
+                        // Menunggu sampai tugas leader selesai
                     }
                 }
-                handleListClientRequest();
+                Thread.sleep(1000);
             } while (!isVoteDone);
         }
 
@@ -558,7 +586,8 @@ public class Server {
 
             isVoteDone = false;
             do {
-                if (isAlive && role.equals("werewolf")) {
+                System.out.println("isAlive: " + isAlive() + "-role: " +role);
+                if ((isAlive && role.equals("werewolf")) || clientId==leaderId) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
@@ -569,12 +598,18 @@ public class Server {
                     response = getResponse(voteResult);
                     sendToClient(response);
                     isLeaderJobDone = true;
+                    System.out.println("isVoteDone1: " + isVoteDone);
                 } else {
                     while (!isLeaderJobDone) {
                         Thread.sleep(1000);
                     }
+                    System.out.println("isVoteDone2: " + isVoteDone);
                 }
+                System.out.println("isVoteDone3: " + isVoteDone);
+                Thread.sleep(1000);
+                System.out.println("isVoteDone4: " + isVoteDone);
             } while (!isVoteDone);
+            System.out.println("tes");
         }
 
         /**
@@ -594,6 +629,12 @@ public class Server {
                 sendToClient(request);
                 response = receiveFromClient();
             } while (!response.getString("status").equals("ok"));
+        }
+
+        private void leaveGame() throws IOException, JSONException {
+            JSONObject request = receiveFromClient();
+            JSONObject response = getResponse(request);
+            sendToClient(response);
         }
 
         /**
@@ -723,6 +764,12 @@ public class Server {
                             udpPort = request.getString("udp_port");
                         }
                         break;
+                    case "leave":
+                        status = "ok";
+                        if (clients.contains(this)) {
+                            clients.remove(this);
+                        }
+                        break;
                     case "ready":
                         status = "ok";
                         isReady = true;
@@ -761,6 +808,9 @@ public class Server {
             clientInfo.put("address", udpAddress);
             clientInfo.put("port", udpPort);
             clientInfo.put("username", username);
+            if (!isAlive) {
+                clientInfo.put("role", role);
+            }
 
             return clientInfo;
         }
@@ -808,8 +858,8 @@ public class Server {
         Scanner scan = new Scanner(System.in);
 
         System.out.print("Input server port: " );
-        ///port = Integer.parseInt(scan.nextLine());
-        port = 2000;
+        port = Integer.parseInt(scan.nextLine());
+
         Server server = new Server(port);
         server.run();
     }

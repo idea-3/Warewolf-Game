@@ -8,6 +8,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.lang.reflect.Array;
 import java.net.*;
 import java.util.*;
 
@@ -16,7 +17,6 @@ import java.util.*;
  */
 public class Client {
     public static final HashMap<String, List<String>> clientToServerRequestKeys = initializedClientToServerRequestKeys();
-    public static final HashMap<String, List<String>> clientToClientRequestKeys = initializedClientToClientRequestKeys();
     public static final HashMap<String, String> commands = initializedCommands();
     public static final HashMap<Integer, String> answers = initializedAnswerChoices();
     public static final int civilianNum = 4;
@@ -24,7 +24,8 @@ public class Client {
 
     private BufferedReader tcpIn;
     private PrintWriter tcpOut;
-    private DatagramSocket udpSocket;
+    public DatagramSocket udpSocket;
+    private UnreliableSender unreliableSender;
     private Socket tcpSocket;
     private Scanner scan;
 
@@ -39,9 +40,10 @@ public class Client {
     public boolean isLeader;
     public boolean isAlive;
     public boolean isGameOver;
-    private String username;
+    public String username;
     public HashMap<Integer, ClientInfo> clientsInfo;
     public String phase;
+    private int voteSequence;
     public ArrayList<String> friends;
     public ArrayList<String> deadPlayer;
     public String narration;
@@ -56,11 +58,10 @@ public class Client {
     public Client(String hostName, int port, int udpPort) throws IOException {
         tcpSocket = new Socket(hostName, port);
         udpSocket = new DatagramSocket(udpPort);
+        unreliableSender = new UnreliableSender(udpSocket);
         tcpIn = new BufferedReader(new InputStreamReader(tcpSocket.getInputStream()));
         tcpOut = new PrintWriter(tcpSocket.getOutputStream(), true);
         scan = new Scanner(System.in);
-        friends = new ArrayList<>();
-        deadPlayer = new ArrayList<>();
 
         sequenceId = 1;
         leaderId = -1;
@@ -72,6 +73,9 @@ public class Client {
         isGameOver = false;
         clientsInfo = new HashMap<>();
         phase = "day";
+
+        friends = new ArrayList<>();
+        deadPlayer = new ArrayList<>();
     }
 
     /**
@@ -113,36 +117,13 @@ public class Client {
         return requestKeys;
     }
 
-    /**
-     * Menginisialisasi request keys dari client ke client lainnya
-     * @return map kunci request JSON yang telah diinisialisasi
-     */
-    private static HashMap<String, List<String>> initializedClientToClientRequestKeys() {
-        HashMap<String, List<String>> requestKeys = new HashMap<>();
-        List<String> keys;
-
-        keys = Arrays.asList("method", "proposal_id");
-        requestKeys.put("prepare_proposal", keys);
-
-        keys = Arrays.asList("method", "proposal_id", "kpu_id");
-        requestKeys.put("accept_proposal", keys);
-
-        keys = Arrays.asList("method", "player_id");
-        requestKeys.put("vote_werewolf", keys);
-
-        keys = Arrays.asList("method", "player_id");
-        requestKeys.put("vote_civilian", keys);
-
-        return requestKeys;
-    }
-
     private static HashMap<String, String> initializedCommands() {
         HashMap<String, String> commands = new HashMap<>();
         commands.put("join", "Joining the game...");
         commands.put("leave", "Do you want to leave the game? (y/n)");
         commands.put("ready", "Are you ready? (y/n)");
         commands.put("username", "Username: ");
-        commands.put("left", "Are you sure want to leave the game?");
+        commands.put("left", "You have left the game");
         commands.put("client_list", "Retrieving players information...");
         commands.put("this_dead", "You are dead");
         commands.put("prepare_proposal_client", "Propose to be a leader...");
@@ -160,6 +141,7 @@ public class Client {
         commands.put("change_phase", "Phase change...");
         commands.put("game_over", "Game over! The winner is ");
         commands.put("civilian_wait", "Dream tight. Bye bye. I love you muach :* :*");
+        commands.put("wait", "Please wait, player are doing their roles right now...");
 
         return commands;
     }
@@ -176,7 +158,7 @@ public class Client {
      * Menjalankan client
      * @throws JSONException
      * @throws IOException
-    */
+     */
     public void run() throws JSONException, IOException, InterruptedException {
         System.out.println("Client address: " + InetAddress.getLocalHost().getHostAddress());
         System.out.println("Client port: " + udpSocket.getLocalPort());
@@ -184,6 +166,8 @@ public class Client {
         // Inisialisasi game
         joinGame();
         readyUp();
+        String decision = scan.nextLine();
+        leaveGame(decision);
         startGame();
         Thread.sleep(1000);
 
@@ -197,11 +181,11 @@ public class Client {
             promise[1] = -1;
             if (isProposer) {
                 // Mengirim proposal ke acceptor
+                udpSocket.setSoTimeout(5000);
                 prepareProposalToClient();
-                if (isPreparedProposer) {
-                    Thread.sleep(1000);
-                    acceptProposalToClient();
-                }
+                Thread.sleep(1000);
+                acceptProposalToClient();
+                udpSocket.setSoTimeout(0);
             } else {
                 // Menerima proposal dari proposer
                 countReceiveProposal = 4;
@@ -224,65 +208,95 @@ public class Client {
 
             // Voting siapa yang akan dibunuh
             do {
+                JSONObject request = new JSONObject();
                 if (phase.equals("day")) {
-                    if (isAlive) {
-                        voteNow();
-                        Thread.sleep(1000);
-                        askClientList();
-                    }
                     Thread.sleep(1000);
                     if (isLeader) {
-                        voteResultCivilian();
+                        // Vote werewolf
+                        String method;
+                        do {
+                            request = receiveFromServer();
+                            method = request.getString("method");
+                            if(method.equals("vote_now")) {
+                                voteNow(request);
+                                String playerUsername = scan.nextLine();
+                                voteResultCivilian(playerUsername);
+                            }
+                        } while (method.equals("vote_now"));
                     } else {
                         if (isAlive) {
-                            boolean isSuccess = false;
-                            int voteSequence = 0;
+                            // Vote civilian
+                            String method;
                             do {
-                                System.out.println(commands.get("vote_civilian"));
-                                String civilianUsername = scan.nextLine();
-                                isSuccess = voteCivilian(civilianUsername);
-                                if (isSuccess == false) {
-                                    voteSequence++;
+                                request = receiveFromServer();
+                                method = request.getString("method");
+                                if(method.equals("vote_now")) {
+                                    voteNow(request);
+                                    boolean isSuccess = false;
+                                    while ((!isSuccess) && voteSequence < 2) {
+                                        String civilianUsername = scan.nextLine();
+                                        voteCivilian(civilianUsername);
+                                        voteSequence++;
+                                    }
                                 }
-                            } while (!isSuccess && voteSequence<2);
+                            } while (voteSequence<2 && method.equals("vote_now"));
+                            voteSequence = 0;
+                        } else {
+                            System.out.println(commands.get("wait"));
+                            request = receiveFromServer(); // Get dummy request
                         }
                     }
                 } else {
-                    if (isAlive && role.equals("werewolf")) {
-                        voteNow();
-                        Thread.sleep(1000);
-                        askClientList();
-                    } else {
-                        System.out.println(commands.get("civilian_wait"));
-                    }
+                    // Night phase
                     Thread.sleep(1000);
                     if (isLeader) {
-                        voteResultWerewolf();
+                        // Vote werewolf
+                        String method;
+                        do {
+                            request = receiveFromServer();
+                            method = request.getString("method");
+                            if(method.equals("vote_now")) {
+                                voteNow(request);
+                                String werewolfUsername = scan.nextLine();
+                                voteResultWerewolf(werewolfUsername);
+                            }
+                        } while (method.equals("vote_now"));
                     } else {
                         if (isAlive && role.equals("werewolf")) {
-                            boolean isSuccess = false;
+                            // Vote werewolf
+                            String method;
                             do {
-                                System.out.println(commands.get("vote_werewolf"));
-                                String werewolfUsername = scan.nextLine();
-                                isSuccess = voteWerewolf(werewolfUsername);
-                            } while (!isSuccess);
+                                request = receiveFromServer();
+                                method = request.getString("method");
+                                if(method.equals("vote_now")) {
+                                    voteNow(request);
+                                    boolean isSuccess = false;
+                                    while (!isSuccess) {
+                                        String werewolfUsername = scan.nextLine();
+                                        isSuccess = voteWerewolf(werewolfUsername);
+                                    }
+                                }
+                            } while (method.equals("vote_now"));
+                        } else {
+                            System.out.println(commands.get("civilian_wait"));
+                            request = receiveFromServer(); // Get dummy request
                         }
                     }
                 }
 
-                if (phase.equals("day")) {
-                    Thread.sleep(1000);
-                    askClientList();
-                    Thread.sleep(1000);
-                }
-                JSONObject request = receiveFromServer();
+//                if (phase.equals("day")) {
+//                    Thread.sleep(1000);
+//                    askClientList();
+//                    Thread.sleep(1000);
+//                }
+                request = receiveFromServer();
                 switch (request.getString("method")) {
                     case "change_phase":
                         changePhase(request);
-                        if (phase.equals("day")) {
-                            Thread.sleep(1000);
-                            askClientList();
-                        }
+//                        if (phase.equals("day")) {
+                        Thread.sleep(1000);
+                        askClientList();
+//                        }
                         break;
                     case "game_over":
                         gameOver(request);
@@ -345,6 +359,13 @@ public class Client {
         return response;
     }
 
+    private void unReliableSendToClient(JSONObject data, InetAddress address, int port) throws IOException {
+        byte[] dataByte = data.toString().getBytes();
+        DatagramPacket packet = new DatagramPacket(dataByte, dataByte.length, address, port);
+        System.out.println("Unreliable data to client " + address + " " + port + ": " + data);
+        unreliableSender.send(packet);
+    }
+
     /**
      * Mengirim data ke client lain
      * @param data data yang dikirim ke client lain
@@ -400,11 +421,10 @@ public class Client {
         boolean isValid = false;
         do {
             System.out.print(commands.get("username"));
-            ///username = scan.nextLine();
-            // TODO: username jangan langssung disimpan ke dalam variable username
-            Random rand = new Random();
-            Integer tes = rand.nextInt((3100-3000) +1) +3000;
-            String username = tes.toString();
+//            username = scan.nextLine();
+//            Random rand = new Random();
+//            Integer tes = rand.nextInt((3100-3000) +1) +3000;
+//            username = tes.toString();
 
             JSONObject request = requestJoinGame(username);
             sendToServer(request);
@@ -444,9 +464,9 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    public void leaveGame() throws JSONException, IOException {
+    public void leaveGame(String decision) throws JSONException, IOException {
         System.out.println(commands.get("leave"));
-        String decision = scan.nextLine();
+        //String decision = scan.nextLine();
         if (decision.equals(answers.get(1))) {
             JSONObject request = requestLeaveGame();
             sendToServer(request);
@@ -461,6 +481,11 @@ public class Client {
                     System.out.println(description);
                     break;
             }
+        } else {
+            JSONObject request = new JSONObject();
+            request.put("method", "ready");
+            sendToServer(request);
+            receiveFromServer();
         }
     }
 
@@ -483,12 +508,11 @@ public class Client {
      * @throws JSONException
      */
     public void readyUp() throws IOException, JSONException {
-        String decision;
-        do {
-            System.out.println(commands.get("ready"));
-            ///decision = scan.nextLine();
-            decision = "y";
-        } while (!decision.equals(answers.get(1)));
+        //String decision;
+//        do {
+//            System.out.println(commands.get("ready"));
+//            //decision = scan.nextLine();
+//        } while (!decision.equals(answers.get(1)));
 
         JSONObject request = requestReadyUp();
         sendToServer(request);
@@ -570,8 +594,8 @@ public class Client {
                         // This player
                         this.isAlive = isAlive;
                         this.role = role;
-                        System.out.println(commands.get("this_dead"));
                         deadPlayer.add(username);
+                        System.out.println(commands.get("this_dead"));
                         System.out.println("Your role is " + role);
                     } else {
                         // Other player
@@ -624,8 +648,6 @@ public class Client {
             } else if (promise[0] > proposalId.getInt(0)){
                 response.put("status", "fail");
                 response.put("description", "rejected");
-
-                countReceiveProposal--;
             } else if (promise[0] == proposalId.getInt(0)) {
                 if (promise[1] < proposalId.getInt(1)) {
                     response.put("status", "ok");
@@ -633,18 +655,24 @@ public class Client {
                     response.put("previous_accepted", promise[1]);
 
                     promise[1] = proposalId.getInt(1);
-                } else if (promise[1] > proposalId.getInt(0)){
+                } else if (promise[1] > proposalId.getInt(1)){
                     response.put("status", "fail");
                     response.put("description", "rejected");
-
-                    countReceiveProposal--;
+                } else {
+                    response.put("status", "ok");
+                    response.put("description", "accepted");
+                    response.put("previous_accepted", promise[1]);
                 }
             }
         } else {
             response = packResponse("error", request.getString("method"));
         }
         countReceiveProposal--;
-        sendToClient(response, address, port);
+        unReliableSendToClient(response, address, port);
+        // Mengecek apakah terkirim
+        if (!unreliableSender.isSent()) {
+            countReceiveProposal++;
+        }
     }
 
     /**
@@ -659,6 +687,7 @@ public class Client {
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "proposal_id", "kpu_id"));
         if (isRequestKeyValid(keys, request)) {
             JSONArray proposalId = request.getJSONArray("proposal_id");
+            System.out.println("Client " + id + " proposal " + proposalId.getInt(0) + " " + proposalId.getInt(1) + " promise " + promise[0] + " " + promise[1]);
             if (promise[0] > proposalId.getInt(0)){
                 response.put("status", "fail");
                 response.put("description", "rejected");
@@ -669,34 +698,39 @@ public class Client {
 
                     promise[1] = proposalId.getInt(1);
                     leaderId = promise[1];
-                } else if (promise[1] > proposalId.getInt(0)){
+                } else if (promise[1] > proposalId.getInt(1)){
                     response.put("status", "fail");
                     response.put("description", "rejected");
                 }
+            } else {
+                response.put("status", "ok");
+                response.put("description", "accepted");
+
+                promise[0] = proposalId.getInt(0);
+                promise[1] = proposalId.getInt(1);
+                leaderId = promise[1];
             }
         } else {
             response = packResponse("error", request.getString("method"));
         }
         countReceiveProposal--;
-        sendToClient(response, address, port);
+        unReliableSendToClient(response, address, port);
+        // Mengecek apakah terkirim
+        if (!unreliableSender.isSent()) {
+            countReceiveProposal++;
+        }
     }
 
+    /**
+     * Memeriksa apakah client ini merupakan salah satu proposer dan menandai variable isProposer
+     */
     public void setIsProposer() {
         ArrayList<Integer> proposerClientId = getProposer();
-        int i = 0;
-        boolean isFound = false;
-        int clientId = 0;
-        while (i<proposerClientId.size() && !isFound) {
-            clientId = proposerClientId.get(i);
-            System.out.println("Proposer: " + clientId);
-            if (clientId == id) {
-                isFound = true;
-            } else {
-                isFound = false;
-                i++;
-            }
+        if (proposerClientId.contains(id)) {
+            isProposer = true;
+        } else {
+            isProposer = false;
         }
-        isProposer = isFound;
     }
 
     /**
@@ -710,33 +744,57 @@ public class Client {
         ArrayList<Integer> acceptorClientId = getAcceptor();
         for (int i=0; i<acceptorClientId.size(); i++) {
             int clientId = acceptorClientId.get(i);
-            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            unReliableSendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
 
+        ArrayList<DatagramPacket> packets = new ArrayList<>();
         int receivedPacket = 0;
         int okProposal = 0;
-        while (receivedPacket < getAliveClientsNum()-2) {
-            // Menunggu paket sampai seluruh acceptor mengirim response
-            DatagramPacket packet = receiveFromClient();
-            JSONObject response = getData(packet);
-            System.out.println("Response converted to JSON: " + response);
-            receivedPacket++;
 
-            String status = response.getString("status");
-            String description = response.getString("description");
-            if (!status.equals("error")) {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
-                if (status.equals("ok")) {
-                    okProposal++;
+        while (receivedPacket < clientsInfo.size() - 2) {
+            try {
+                // Menunggu paket sampai seluruh acceptor mengirim response
+                DatagramPacket packet = receiveFromClient();
+                packets.add(packet);
+                JSONObject response = getData(packet);
+                System.out.println("Response converted to JSON: " + response);
+                receivedPacket++;
+
+                String status = response.getString("status");
+                String description = response.getString("description");
+                String senderUsername = clientsInfo.get(getClientIdByAddress(packet.getAddress(), packet.getPort())).getUsername();
+                if (!status.equals("error")) {
+                    System.out.println(senderUsername + ": " + description + " proposal.");
+                    if (status.equals("ok")) {
+                        okProposal++;
+                    } else {
+                        isPreparedProposer = false;
+                    }
                 } else {
                     isPreparedProposer = false;
+                    System.out.println(senderUsername + ": " + description);
                 }
-            } else {
-                isPreparedProposer = false;
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
+            } catch(SocketTimeoutException e){
+                // Mengirim ulang prepare proposal
+                for (int i = 0; i < acceptorClientId.size(); i++) {
+                    boolean isFound = false;
+                    int j = 0;
+                    ClientInfo clientInfo = clientsInfo.get(i);
+                    while (j < packets.size() && !isFound) {
+                        DatagramPacket packet = packets.get(j);
+                        if (clientInfo.getAddress().equals(packet.getAddress()) && clientInfo.getPort() == packet.getPort()) {
+                            isFound = true;
+                        } else {
+                            j++;
+                        }
+                    }
+                    if (!isFound) {
+                        unReliableSendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
+                    }
+                }
             }
-            // TODO: Previous accepted dipakai?
         }
+
         if (okProposal == receivedPacket) {
             isPreparedProposer = true;
             System.out.println(commands.get("prepare_me_leader"));
@@ -822,31 +880,50 @@ public class Client {
             sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
         }
 
+        ArrayList<DatagramPacket> packets = new ArrayList<>();
         int receivedPacket = 0;
         int okProposal = 0;
-        while (receivedPacket < getAliveClientsNum()-2) {
-            // Menunggu paket sampai seluruh acceptor mengirim response
-            DatagramPacket packet = receiveFromClient();
-            JSONObject response = getData(packet);
-            System.out.println("Response converted to JSON: " + response);
-            receivedPacket++;
+        while (receivedPacket < clientsInfo.size()-2) {
+            try {
+                // Menunggu paket sampai seluruh acceptor mengirim response
+                DatagramPacket packet = receiveFromClient();
+                packets.add(packet);
+                JSONObject response = getData(packet);
+                System.out.println("Response converted to JSON: " + response);
+                receivedPacket++;
 
-            String status = response.getString("status");
-            String description = response.getString("description");
-            if (!status.equals("error")) {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description + " proposal.");
-                if (status.equals("ok")) {
-                    okProposal++;
+                String status = response.getString("status");
+                String description = response.getString("description");
+                String senderUsername = clientsInfo.get(getClientIdByAddress(packet.getAddress(), packet.getPort())).getUsername();
+                if (!status.equals("error")) {
+                    System.out.println(senderUsername + ": " + description + " proposal.");
+                    if (status.equals("ok")) {
+                        okProposal++;
+                    }
+                } else {
+                    System.out.println(senderUsername + ": " + description);
                 }
-            } else {
-                System.out.println(getClientIdByAddress(packet.getAddress(), packet.getPort()) + ": " + description);
+            } catch (SocketTimeoutException e){
+                // Mengirim ulang accept proposal
+                for (int i = 0; i < acceptorClientId.size(); i++) {
+                    boolean isFound = false;
+                    int j = 0;
+                    ClientInfo clientInfo = clientsInfo.get(i);
+                    while (j < packets.size() && !isFound) {
+                        DatagramPacket packet = packets.get(j);
+                        if (clientInfo.getAddress().equals(packet.getAddress()) && clientInfo.getPort() == packet.getPort()) {
+                            isFound = true;
+                        } else {
+                            j++;
+                        }
+                    }
+                    if (!isFound) {
+                        unReliableSendToClient(request, clientInfo.getAddress(), clientInfo.getPort());
+                    }
+                }
             }
         }
         sequenceId += 1;
-        if (okProposal == receivedPacket) {
-            isLeader = true;
-            System.out.println(commands.get("accept_me_leader"));
-        }
     }
 
     /**
@@ -908,8 +985,16 @@ public class Client {
      * @throws IOException
      */
     public boolean voteWerewolf(String werewolfUsername) throws JSONException, IOException {
-        boolean isSuccess = false;
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        askClientList();
 
+        boolean isSuccess = false;
+        System.out.println(commands.get("vote_werewolf"));
+        //String werewolfUsername = scan.nextLine();
 
         int clientId = getClientIdByUsername(werewolfUsername);
         JSONObject request = requestVoteWerewolf(clientId);
@@ -974,14 +1059,23 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    public void voteResultWerewolf() throws JSONException, IOException {
+    public void voteResultWerewolf(String werewolfUsername) throws JSONException, IOException {
+        if (isAlive) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            askClientList();
+        }
+
         boolean isSuccess = false;
         do {
             int selfIsWerewolf = 0;
             // Vote for itself if I am a werewolf
-            if (role.equals("werewolf")) {
+            if (role.equals("werewolf") && isAlive) {
                 System.out.println(commands.get("vote_werewolf"));
-                String werewolfUsername = scan.nextLine();
+                //String werewolfUsername = scan.nextLine();
 
                 int clientIdVoted = getClientIdByUsername(werewolfUsername);
                 int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
@@ -1002,12 +1096,10 @@ public class Client {
             sendToServer(playerKilledRequest);
             JSONObject response = receiveFromServer();
             System.out.println(response.getString("description"));
-            if (response.getString("ok").equals("ok") && getHighestVoteClientId()!=-1) {
+            if (response.getString("status").equals("ok")) {
                 isSuccess = true;
             }
             emptyClientsInfoVoteNum();
-
-            // TODO: vote_now
         } while (!isSuccess);
     }
 
@@ -1027,7 +1119,7 @@ public class Client {
             response = packResponse("error", "Kill werewolf");
         }
         sendToClient(response, packet.getAddress(), packet.getPort());
-}
+    }
 
     private void emptyClientsInfoVoteNum() {
         for (ClientInfo clientInfo : clientsInfo.values()) {
@@ -1131,8 +1223,16 @@ public class Client {
      * @throws IOException
      */
     public boolean voteCivilian(String civilianUsername) throws JSONException, IOException {
-        boolean isSuccess = false;
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        askClientList();
 
+        boolean isSuccess = false;
+        System.out.println(commands.get("vote_civilian"));
+        //String civilianUsername = scan.nextLine();
 
         int clientId = getClientIdByUsername(civilianUsername);
         JSONObject request = requestVoteCivilian(clientId);
@@ -1149,6 +1249,7 @@ public class Client {
                 System.out.println(commands.get("vote_civilian_not_success"));
                 break;
         }
+
         return isSuccess;
     }
 
@@ -1166,23 +1267,34 @@ public class Client {
         return request;
     }
 
-    public void voteResultCivilian() throws IOException, JSONException {
+    public void voteResultCivilian(String playerUsername) throws IOException, JSONException {
+        if (isAlive) {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            askClientList();
+        }
+
         int voteSequence = 0;
         boolean isSuccess = false;
         do {
             int selfIsCivilian = 0;
-            // Vote for itself if I am a civilian
-            System.out.println(commands.get("vote_civilian"));
-            String playerUsername = scan.nextLine();
+            // Vote for itself
+            if (isAlive) {
+                System.out.println(commands.get("vote_civilian"));
+                //String playerUsername = scan.nextLine();
 
-            int clientIdVoted = getClientIdByUsername(playerUsername);
-            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
-            clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
-            selfIsCivilian = 1;
+                int clientIdVoted = getClientIdByUsername(playerUsername);
+                int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+                clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
+                selfIsCivilian = 1;
+            }
 
             // Waiting others to vote
             int votedClientNum = 0;
-            while (votedClientNum < getAliveClientsNum()-getDeadClientsNum("civilian")-selfIsCivilian) {
+            while (votedClientNum < getAliveClientsNum()-selfIsCivilian) {
                 handleClientVote(receiveFromClient());
                 votedClientNum++;
             }
@@ -1193,14 +1305,12 @@ public class Client {
             sendToServer(playerKilledRequest);
             JSONObject response = receiveFromServer();
             System.out.println(response.getString("description"));
-            if (response.getString("status").equals("ok") && getHighestVoteClientId()!=-1) {
+            if (response.getString("status").equals("ok")) {
                 isSuccess = true;
             } else {
                 voteSequence++;
             }
             emptyClientsInfoVoteNum();
-
-            // TODO: vote_now
         } while (!isSuccess && voteSequence<2);
     }
 
@@ -1296,8 +1406,8 @@ public class Client {
                 System.out.println("Your friends: ");
                 JSONArray friendsJSON = request.getJSONArray("friend");
                 for (int i = 0; i < friendsJSON.length(); i++) {
-                    System.out.println(friendsJSON.getString(i));
                     friends.add(friendsJSON.getString(i));
+                    System.out.println(friendsJSON.getString(i));
                 }
             }
 
@@ -1337,8 +1447,7 @@ public class Client {
      * @throws IOException
      * @throws JSONException
      */
-    public void voteNow() throws IOException, JSONException {
-        JSONObject request = receiveFromServer();
+    public void voteNow(JSONObject request) throws IOException, JSONException {
         JSONObject response;
 
         ArrayList<String> keys = new ArrayList<>(Arrays.asList("method", "phase"));
@@ -1371,8 +1480,8 @@ public class Client {
             System.out.println(request.getString("description"));
             System.out.print(commands.get("game_over"));
             System.out.println(request.getString("winner"));
-            winner = request.getString("winner");
 
+            winner = request.getString("winner");
             isGameOver = true;
             //TODO: check when game over is failed
         } else {
@@ -1397,6 +1506,10 @@ public class Client {
             int leaderIdByServer = request.getInt("kpu_id");
             if (request.getString("method").equals("kpu_selected") && clientsInfo.get(leaderIdByServer)!=null) {
                 leaderId = leaderIdByServer;
+                if (leaderId == id) {
+                    isLeader = true;
+                    System.out.println(commands.get("accept_me_leader"));
+                }
                 response = packResponse("ok", "kpu_selected");
             } else {
                 response = packResponse("fail", "kpu_selected");
@@ -1423,17 +1536,13 @@ public class Client {
         Scanner scan = new Scanner(System.in);
 
         System.out.print("Input server IP host name: ");
-        ///String hostName = scan.nextLine();
-        String hostName = "Windows7-PC";
+        String hostName = scan.nextLine();
+
         System.out.print("Input server port: ");
-        ///int port = Integer.parseInt(scan.nextLine());
-        int port = 2000;
+        int port = Integer.parseInt(scan.nextLine());
+
         System.out.print("Input UDP port: ");
-        ///int udpPort = Integer.parseInt(scan.nextLine());
-        java.util.Random rand = new Random();
-        int udpPort = rand.nextInt((3100-3000) +1) +3000;
-        System.out.println(udpPort);
-        System.out.println(InetAddress.getLocalHost().getHostAddress());
+        int udpPort = Integer.parseInt(scan.nextLine());
 
         System.out.println("Connecting to " + hostName + " on port " + port);
         Client client = new Client(hostName, port, udpPort);

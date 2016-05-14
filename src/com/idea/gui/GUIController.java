@@ -26,7 +26,6 @@ public class GUIController {
     VoteFrame voteFrame;
 
     String hostName;
-    String username;
     int port;
     int udpPort;
 
@@ -55,12 +54,20 @@ public class GUIController {
 
         startPanel.loginButton.addActionListener(e -> {
             try {
+//                hostName = "DEVINA-PC";
+//                port = 8080;
+//                java.util.Random rand = new Random();
+//                udpPort = rand.nextInt((3100-3000) +1) +3000;
+
+
                 hostName = startPanel.ipHostNameTextField.getText();
                 port = Integer.parseInt(startPanel.serverPortTextField.getText());
                 udpPort = Integer.parseInt(startPanel.udpPortTextField.getText());
-                username = startPanel.usernameTextField.getText();
+
 
                 client = new Client(hostName, port, udpPort);
+//                client.username = String.valueOf(udpPort);
+                client.username = startPanel.usernameTextField.getText();
 
                 client.joinGame();
                 showReadyOptionPane();
@@ -73,12 +80,13 @@ public class GUIController {
         frame.setContentPane(startPanel);
     }
 
-    public void showReadyOptionPane() {
+    public void showReadyOptionPane() throws IOException, JSONException {
         String message = "Are you ready?";
         String title = "Ready Confirmation";
         Object[] options = {"Yes", "No"};
         int answerId = JOptionPane.showOptionDialog(null, message, title, JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, options[1]);
         if (options[answerId].equals("Yes")) {
+            client.leaveGame("n");
             MainFrame frame = MainFrame.getInstance();
             frame.getContentPane().remove(startPanel);
             try {
@@ -87,7 +95,7 @@ public class GUIController {
                 frame.setContentPane(mainPanel);
                 frame.validate();
 
-                mainPanel.usernameLabel.setText("Hi, " + username);
+                mainPanel.usernameLabel.setText("Hi, " + client.username);
 
                 JPanel pnlDialog = new JPanel();
                 waitingDialog.setBackground(new java.awt.Color(210, 204, 204));
@@ -113,6 +121,8 @@ public class GUIController {
             } catch (JSONException e) {
                 e.printStackTrace();
             }
+        } else {
+            client.leaveGame("y");
         }
     }
 
@@ -142,7 +152,7 @@ public class GUIController {
         }
         client.askClientList();
         mainPanel.playersPanel.setLayout(new GridLayout(client.clientsInfo.size()+1, 1));
-        JLabel playerTitleLabel = new JLabel("Your friends: ");
+        JLabel playerTitleLabel = new JLabel("Players: ");
         playerTitleLabel.setFont(new java.awt.Font("Tahoma", 0, 24));
         playerTitleLabel.setForeground(new java.awt.Color(75, 86, 106));
         friendsArrayLabel.add(playerTitleLabel);
@@ -167,13 +177,13 @@ public class GUIController {
             client.promise[1] = -1;
             if (client.isProposer) {
                 // Mengirim proposal ke acceptor
+                client.udpSocket.setSoTimeout(5000);
                 client.prepareProposalToClient();
-                if (client.isPreparedProposer) {
-                    Thread.sleep(1000);
-                    client.acceptProposalToClient();
-                }
+                Thread.sleep(1000);
+                client.acceptProposalToClient();
+                client.udpSocket.setSoTimeout(0);
             } else {
-                // Menerima proposal dari proposer
+                /// Menerima proposal dari proposer
                 client.countReceiveProposal = 4;
                 do {
                     DatagramPacket datagramPacket = client.receiveFromClient();
@@ -194,75 +204,146 @@ public class GUIController {
 
             // Voting siapa yang akan dibunuh
             do {
+                JSONObject request = new JSONObject();
                 if (client.phase.equals("day")) {
-                    if (client.isAlive) {
-                        Thread.sleep(1000);
-                        client.askClientList();
-                    }
                     Thread.sleep(1000);
                     if (client.isLeader) {
-                        client.voteResultCivilian();
+                        // Vote werewolf
+                        String method;
+                        do {
+                            request = client.receiveFromServer();
+                            method = request.getString("method");
+                            if(method.equals("vote_now")) {
+                                client.voteNow(request);
+                                voteFrame.setVisible(true);
+                                voteFrame.okButton.addActionListener(new ActionListener() {
+                                    @Override
+                                    public void actionPerformed(ActionEvent e) {
+                                        try {
+                                            client.voteResultCivilian(voteFrame.usernameTextField.getText());
+                                            voteFrame.dispose();
+                                        } catch (JSONException e1) {
+                                            e1.printStackTrace();
+                                        } catch (IOException e1) {
+                                            e1.printStackTrace();
+                                        }
+                                    }
+                                });
+
+                            }
+                        } while (method.equals("vote_now"));
                     } else {
                         if (client.isAlive) {
-                            voteFrame.setVisible(true);
-                            isSuccess = false;
-                            voteSequence = 0;
-                            voteFrame.okButton.addActionListener(new ActionListener() {
-                                @Override
-                                public void actionPerformed(ActionEvent e) {
-                                    try {
-                                        isSuccess = client.voteCivilian(voteFrame.usernameTextField.getText());
-                                        if (isSuccess && voteSequence >= 2) {
-                                            voteFrame.dispose();
-                                        } else {
-                                            JOptionPane.showMessageDialog(voteFrame, "Vote failed", "Error", JOptionPane.ERROR_MESSAGE);
-                                            voteSequence++;
-                                        }
-                                    } catch (JSONException e1) {
-                                        e1.printStackTrace();
-                                    } catch (IOException e1) {
-                                        e1.printStackTrace();
-                                    }
-                                }
-                            });
+                            // Vote werewolf
+                            String method;
+                            do {
+                                request = client.receiveFromServer();
+                                method = request.getString("method");
+                                if(method.equals("vote_now"))
+                                {
+                                    client.voteNow(request);
+                                    voteFrame.setVisible(true);
+                                    isSuccess = false;
+                                    voteFrame.okButton.addActionListener(new ActionListener() {
+                                        @Override
+                                        public void actionPerformed(ActionEvent e) {
+                                            try {
+                                                isSuccess = client.voteCivilian(voteFrame.usernameTextField.getText());
 
+                                                if ((isSuccess) || (voteSequence > 2)) {
+                                                    voteFrame.dispose();
+                                                    voteSequence = 0;
+                                                } else {
+                                                    JOptionPane.showMessageDialog(voteFrame, "Vote failed", "Error", JOptionPane.ERROR_MESSAGE);
+                                                    voteSequence++;
+                                                }
+                                            } catch (JSONException e1) {
+                                                e1.printStackTrace();
+                                            } catch (IOException e1) {
+                                                e1.printStackTrace();
+                                            }
+                                        }
+                                    });
+
+                                }
+                            } while (voteSequence<2 && method.equals("vote_now"));
+
+                        } else {
+                            System.out.println(client.commands.get("wait"));
+                            request = client.receiveFromServer(); // Get dummy request
                         }
                     }
                 } else {
-                    if (client.isAlive && client.role.equals("werewolf")) {
-
-                        Thread.sleep(1000);
-                        client.askClientList();
-                    } else {
-                        System.out.println(client.commands.get("civilian_wait"));
-                    }
+                    // Night phase
                     Thread.sleep(1000);
                     if (client.isLeader) {
-                        client.voteResultWerewolf();
+                        // Vote civilian
+                        String method;
+                        do {
+                            request = client.receiveFromServer();
+                            method = request.getString("method");
+                            if(method.equals("vote_now")) {
+                                client.voteNow(request);
+                                voteFrame.setVisible(true);
+                                voteFrame.okButton.addActionListener(new ActionListener() {
+                                    @Override
+                                    public void actionPerformed(ActionEvent e) {
+                                        try {
+                                            client.voteResultWerewolf(voteFrame.usernameTextField.getText());
+                                            voteFrame.dispose();
+                                        } catch (JSONException e1) {
+                                            e1.printStackTrace();
+                                        } catch (IOException e1) {
+                                            e1.printStackTrace();
+                                        }
+                                    }
+                                });
+
+                            }
+                        } while (method.equals("vote_now"));
                     } else {
                         if (client.isAlive && client.role.equals("werewolf")) {
-                            voteFrame.setVisible(true);
-                            isSuccess = false;
-                            voteFrame.okButton.addActionListener(new ActionListener() {
-                                @Override
-                                public void actionPerformed(ActionEvent e) {
-                                    try {
-                                        isSuccess = client.voteWerewolf(voteFrame.usernameTextField.getText());
-                                        if (isSuccess) {
-                                            voteFrame.dispose();
-                                        } else {
-                                            JOptionPane.showMessageDialog(voteFrame, "Vote failed", "Error", JOptionPane.ERROR_MESSAGE);
+                            // Vote civilian
+                            String method;
+                            do {
+                                request = client.receiveFromServer();
+                                method = request.getString("method");
+                                if(method.equals("vote_now")) {
+                                    client.voteNow(request);
+                                    isSuccess = false;
+                                    voteFrame.setVisible(true);
+                                    voteFrame.okButton.addActionListener(new ActionListener() {
+                                        @Override
+                                        public void actionPerformed(ActionEvent e) {
+                                            try {
+                                                isSuccess = client.voteWerewolf(voteFrame.usernameTextField.getText());
+                                                if (isSuccess) {
+                                                    voteFrame.dispose();
+                                                } else {
+                                                    JOptionPane.showMessageDialog(voteFrame, "Vote failed", "Error", JOptionPane.ERROR_MESSAGE);
+                                                }
+
+                                            } catch (JSONException e1) {
+                                                e1.printStackTrace();
+                                            } catch (IOException e1) {
+                                                e1.printStackTrace();
+                                            }
                                         }
-                                    } catch (JSONException e1) {
-                                        e1.printStackTrace();
-                                    } catch (IOException e1) {
-                                        e1.printStackTrace();
-                                    }
+                                    });
                                 }
-                            });
+                            } while (method.equals("vote_now"));
+                        } else {
+                            System.out.println(client.commands.get("civilian_wait"));
+                            request = client.receiveFromServer(); // Get dummy request
                         }
                     }
                 }
+
+//                if (phase.equals("day")) {
+//                    Thread.sleep(1000);
+//                    askClientList();
+//                    Thread.sleep(1000);
+//                }
 
                 if (client.role.equals("werewolf")) {
                     int j = 0;
@@ -282,19 +363,14 @@ public class GUIController {
                     }
                 }
 
-                if (client.phase.equals("day")) {
-                    Thread.sleep(1000);
-                    client.askClientList();
-                    Thread.sleep(1000);
-                }
-                JSONObject request = client.receiveFromServer();
+                request = client.receiveFromServer();
                 switch (request.getString("method")) {
                     case "change_phase":
                         client.changePhase(request);
-                        if (client.phase.equals("day")) {
-                            Thread.sleep(1000);
-                            client.askClientList();
-                        }
+//                        if (phase.equals("day")) {
+                        Thread.sleep(1000);
+                        client.askClientList();
+//                        }
                         mainPanel.narration.setText(client.narration);
                         break;
                     case "game_over":
