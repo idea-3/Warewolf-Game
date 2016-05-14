@@ -227,12 +227,14 @@ public class Client {
                                     voteSequence++;
                                 }
                             } while (voteSequence<2 && method.equals("vote_now"));
+                            voteSequence = 0;
                         } else {
                             System.out.println(commands.get("wait"));
                             request = receiveFromServer(); // Get dummy request
                         }
                     }
                 } else {
+                    // Night phase
                     Thread.sleep(1000);
                     if (isLeader) {
                         // Vote werewolf
@@ -1272,7 +1274,7 @@ public class Client {
 
             // Waiting others to vote
             int votedClientNum = 0;
-            while (votedClientNum < getAliveClientsNum()-getDeadClientsNum("civilian")-selfIsCivilian) {
+            while (votedClientNum < getAliveClientsNum()-selfIsCivilian) {
                 handleClientVote(receiveFromClient());
                 votedClientNum++;
             }

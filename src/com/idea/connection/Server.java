@@ -184,6 +184,17 @@ public class Server {
     }
 
     /**
+     * Mengecek isLeaderJobDone
+     * @return true jika isLeaderJobDone true
+     * @throws InterruptedException
+     */
+    private boolean checkLeaderJobDone() throws InterruptedException {
+        Thread.sleep(1000);
+        boolean leaderJobDone = isLeaderJobDone;
+        return leaderJobDone;
+    }
+
+    /**
      * Memeriksa apakah username telah ada atau tidak
      * @return true jika username telah ada
      */
@@ -545,7 +556,7 @@ public class Server {
             isVoteDone = false;
             do {
                 countVote++;
-                if (isAlive) {
+                if (isAlive || clientId == leaderId) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
@@ -560,8 +571,8 @@ public class Server {
                     sendToClient(response);
                     isLeaderJobDone = true;
                 } else {
-                    while (!isLeaderJobDone) {
-                        Thread.sleep(1000);
+                    while (!checkLeaderJobDone()) {
+                        // Menunggu sampai tugas leader selesai
                     }
                 }
                 Thread.sleep(1000);
@@ -576,7 +587,7 @@ public class Server {
             isVoteDone = false;
             do {
                 System.out.println("isAlive: " + isAlive() + "-role: " +role);
-                if (isAlive && (role.equals("werewolf") || clientId==leaderId)) {
+                if ((isAlive && role.equals("werewolf")) || clientId==leaderId) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
