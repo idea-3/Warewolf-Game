@@ -131,9 +131,9 @@ public class Client {
         commands.put("vote_civilian", "Input the username that you want to kill:");
         commands.put("vote_civilian_not_success", "Vote civilian is not success");
         commands.put("start_game", "Game is starting...");
-        commands.put("change_phase", "Phase change...");
+        commands.put("change_phase", "Phase changed...");
         commands.put("game_over", "Game over! The winner is ");
-        commands.put("civilian_wait", "Dream tight. Bye bye. I love you muach :* :*");
+        commands.put("civilian_wait", "Good night. Dream tight");
         commands.put("wait", "Please wait, player are doing their roles right now...");
 
         return commands;
@@ -204,7 +204,7 @@ public class Client {
                 if (phase.equals("day")) {
                     Thread.sleep(1000);
                     if (isLeader) {
-                        // Vote werewolf
+                        // Vote civilian
                         String method;
                         do {
                             request = receiveFromServer();
@@ -217,6 +217,7 @@ public class Client {
                     } else {
                         if (isAlive) {
                             // Vote civilian
+                            voteSequence = 0;
                             String method;
                             do {
                                 request = receiveFromServer();
@@ -227,7 +228,11 @@ public class Client {
                                     voteSequence++;
                                 }
                             } while (voteSequence<2 && method.equals("vote_now"));
-                            voteSequence = 0;
+
+                            // Get dummy request for 2nd vote
+                            if (voteSequence == 2) {
+                                request = receiveFromServer();
+                            }
                         } else {
                             System.out.println(commands.get("wait"));
                             request = receiveFromServer(); // Get dummy request
@@ -271,18 +276,22 @@ public class Client {
 //                    askClientList();
 //                    Thread.sleep(1000);
 //                }
-                request = receiveFromServer();
-                switch (request.getString("method")) {
-                    case "change_phase":
-                        changePhase(request);
+                if (request.getString("method").equals("game_over")) {
+                    gameOver(request);
+                } else {
+                    request = receiveFromServer();
+                    switch (request.getString("method")) {
+                        case "change_phase":
+                            changePhase(request);
 //                        if (phase.equals("day")) {
                             Thread.sleep(1000);
                             askClientList();
 //                        }
-                        break;
-                    case "game_over":
-                        gameOver(request);
-                        break;
+                            break;
+                        case "game_over":
+                            gameOver(request);
+                            break;
+                    }
                 }
             } while (phase.equals("night") && !isGameOver);
         }
@@ -1061,6 +1070,8 @@ public class Client {
                 int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
                 clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
                 selfIsWerewolf = 1;
+            } else {
+                System.out.println(commands.get("civilian_wait"));
             }
 
             // Waiting others to vote
@@ -1270,6 +1281,8 @@ public class Client {
                 int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
                 clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
                 selfIsCivilian = 1;
+            } else {
+                System.out.println(commands.get("wait"));
             }
 
             // Waiting others to vote

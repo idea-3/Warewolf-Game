@@ -106,7 +106,7 @@ public class Server {
         descriptionResponseValues.put("accepted_proposal ok", "");
         descriptionResponseValues.put("accepted_proposal fail", "");
         descriptionResponseValues.put("accepted_proposal error", "");
-        descriptionResponseValues.put("vote_result_werewolf ok", "");
+        descriptionResponseValues.put("vote_result_werewolf ok", "The vote has been received in server.");
         descriptionResponseValues.put("vote_result ok", "");
         descriptionResponseValues.put("vote_result_werewolf fail", "");
         descriptionResponseValues.put("vote_result fail", "");
@@ -115,7 +115,7 @@ public class Server {
         descriptionResponseValues.put("vote_civilian ok", "");
         descriptionResponseValues.put("vote_civilian fail", "");
         descriptionResponseValues.put("vote_civilian error", "");
-        descriptionResponseValues.put("vote_result_civilian ok", "");
+        descriptionResponseValues.put("vote_result_civilian ok", "The vote has been received in server.");
         descriptionResponseValues.put("vote_result_werewolf fail", "");
         descriptionResponseValues.put("vote_result_werewolf error", "");
         descriptionResponseValues.put("start fail", "");
