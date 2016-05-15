@@ -556,7 +556,7 @@ public class Server {
             isVoteDone = false;
             do {
                 countVote++;
-                if (isAlive || clientId == leaderId) {
+                if (isAlive || (clientId == leaderId)) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
@@ -598,18 +598,13 @@ public class Server {
                     response = getResponse(voteResult);
                     sendToClient(response);
                     isLeaderJobDone = true;
-                    System.out.println("isVoteDone1: " + isVoteDone);
                 } else {
-                    while (!isLeaderJobDone) {
-                        Thread.sleep(1000);
+                    while (!checkLeaderJobDone()) {
+                        // Menunggu sampai tugas leader selesai
                     }
-                    System.out.println("isVoteDone2: " + isVoteDone);
                 }
-                System.out.println("isVoteDone3: " + isVoteDone);
                 Thread.sleep(1000);
-                System.out.println("isVoteDone4: " + isVoteDone);
             } while (!isVoteDone);
-            System.out.println("tes");
         }
 
         /**
