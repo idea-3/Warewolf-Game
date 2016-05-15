@@ -54,20 +54,20 @@ public class GUIController {
 
         startPanel.loginButton.addActionListener(e -> {
             try {
-//                hostName = "DEVINA-PC";
-//                port = 8080;
-//                java.util.Random rand = new Random();
-//                udpPort = rand.nextInt((3100-3000) +1) +3000;
+                hostName = "DEVINA-PC";
+                port = 8080;
+                java.util.Random rand = new Random();
+                udpPort = rand.nextInt((3100-3000) +1) +3000;
 
 
-                hostName = startPanel.ipHostNameTextField.getText();
-                port = Integer.parseInt(startPanel.serverPortTextField.getText());
-                udpPort = Integer.parseInt(startPanel.udpPortTextField.getText());
+//                hostName = startPanel.ipHostNameTextField.getText();
+//                port = Integer.parseInt(startPanel.serverPortTextField.getText());
+//                udpPort = Integer.parseInt(startPanel.udpPortTextField.getText());
 
 
                 client = new Client(hostName, port, udpPort);
-//                client.username = String.valueOf(udpPort);
-                client.username = startPanel.usernameTextField.getText();
+                client.username = String.valueOf(udpPort);
+//                client.username = startPanel.usernameTextField.getText();
 
                 client.joinGame();
                 showReadyOptionPane();
@@ -217,12 +217,19 @@ public class GUIController {
                             if(method.equals("vote_now")) {
                                 client.voteNow(request);
                                 voteFrame.setVisible(true);
+                                isSuccess = false;
                                 voteFrame.okButton.addActionListener(new ActionListener() {
                                     @Override
                                     public void actionPerformed(ActionEvent e) {
                                         try {
-                                            client.voteResultCivilian(voteFrame.usernameTextField.getText());
-                                            voteFrame.dispose();
+                                            isSuccess = client.voteResultCivilian(voteFrame.usernameTextField.getText());
+                                            if ((isSuccess) || (voteSequence > 2)) {
+                                                voteFrame.dispose();
+                                                voteSequence = 0;
+                                            } else {
+                                                JOptionPane.showMessageDialog(voteFrame, "Vote failed", "Error", JOptionPane.ERROR_MESSAGE);
+                                                voteSequence++;
+                                            }
                                         } catch (JSONException e1) {
                                             e1.printStackTrace();
                                         } catch (IOException e1) {
@@ -286,12 +293,17 @@ public class GUIController {
                             if(method.equals("vote_now")) {
                                 client.voteNow(request);
                                 voteFrame.setVisible(true);
+                                isSuccess = false;
                                 voteFrame.okButton.addActionListener(new ActionListener() {
                                     @Override
                                     public void actionPerformed(ActionEvent e) {
                                         try {
-                                            client.voteResultWerewolf(voteFrame.usernameTextField.getText());
-                                            voteFrame.dispose();
+                                            isSuccess = client.voteResultWerewolf(voteFrame.usernameTextField.getText());
+                                            if (isSuccess) {
+                                                voteFrame.dispose();
+                                            } else {
+                                                JOptionPane.showMessageDialog(voteFrame, "Vote failed", "Error", JOptionPane.ERROR_MESSAGE);
+                                            }
                                         } catch (JSONException e1) {
                                             e1.printStackTrace();
                                         } catch (IOException e1) {

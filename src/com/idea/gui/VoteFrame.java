@@ -12,6 +12,8 @@ public class VoteFrame extends JFrame {
      */
     public VoteFrame() {
         initComponents();
+        Dimension dim = Toolkit.getDefaultToolkit().getScreenSize();
+        this.setLocation(dim.width/2-this.getSize().width/2, dim.height/2-this.getSize().height/2 - 20);
     }
 
     /**
@@ -78,4 +80,9 @@ public class VoteFrame extends JFrame {
     public javax.swing.JButton okButton;
     private javax.swing.JLabel usernameLabel;
     public javax.swing.JTextField usernameTextField;
+
+    public static void main(String[] args) {
+        VoteFrame voteFrame = new VoteFrame();
+        voteFrame.setVisible(true);
+    }
 }

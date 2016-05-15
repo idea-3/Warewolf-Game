@@ -220,7 +220,13 @@ public class Client {
                             if(method.equals("vote_now")) {
                                 voteNow(request);
                                 String playerUsername = scan.nextLine();
-                                voteResultCivilian(playerUsername);
+                                boolean isSuccess = false;
+                                voteSequence = 0;
+                                do {
+                                    isSuccess = voteResultCivilian(playerUsername);
+                                    voteSequence++;
+                                } while ((!isSuccess) && (voteSequence > 2));
+
                             }
                         } while (method.equals("vote_now"));
                     } else {
@@ -262,8 +268,12 @@ public class Client {
                             method = request.getString("method");
                             if(method.equals("vote_now")) {
                                 voteNow(request);
+                                boolean isSuccess = false;
                                 String werewolfUsername = scan.nextLine();
-                                voteResultWerewolf(werewolfUsername);
+                                do {
+                                    isSuccess = voteResultWerewolf(werewolfUsername);
+                                } while (!isSuccess);
+
                             }
                         } while (method.equals("vote_now"));
                     } else {
@@ -1070,7 +1080,7 @@ public class Client {
      * @throws JSONException
      * @throws IOException
      */
-    public void voteResultWerewolf(String werewolfUsername) throws JSONException, IOException {
+    public boolean voteResultWerewolf(String werewolfUsername) throws JSONException, IOException {
         if (isAlive) {
             try {
                 Thread.sleep(1000);
@@ -1081,39 +1091,38 @@ public class Client {
         }
 
         boolean isSuccess = false;
-        do {
-            int selfIsWerewolf = 0;
-            // Vote for itself if I am a werewolf
-            if (role.equals("werewolf") && isAlive) {
-                System.out.println(commands.get("vote_werewolf"));
-                //String werewolfUsername = scan.nextLine();
+        int selfIsWerewolf = 0;
+        // Vote for itself if I am a werewolf
+        if (role.equals("werewolf") && isAlive) {
+            System.out.println(commands.get("vote_werewolf"));
+            //String werewolfUsername = scan.nextLine();
 
-                int clientIdVoted = getClientIdByUsername(werewolfUsername);
-                int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
-                clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
-                selfIsWerewolf = 1;
-            } else {
-                System.out.println(commands.get("civilian_wait"));
-            }
+            int clientIdVoted = getClientIdByUsername(werewolfUsername);
+            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+            clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
+            selfIsWerewolf = 1;
+        } else {
+            System.out.println(commands.get("civilian_wait"));
+        }
 
-            // Waiting others to vote
-            int votedClientNum = 0;
-            while (votedClientNum < werewolfNum-getDeadClientsNum("werewolf")-selfIsWerewolf) {
-                handleClientVote(receiveFromClient());
-                votedClientNum++;
-            }
+        // Waiting others to vote
+        int votedClientNum = 0;
+        while (votedClientNum < werewolfNum-getDeadClientsNum("werewolf")-selfIsWerewolf) {
+            handleClientVote(receiveFromClient());
+            votedClientNum++;
+        }
 
-            // Count vote
-            System.out.println(commands.get("count_vote"));
-            JSONObject playerKilledRequest = requestVoteResultWerewolf();
-            sendToServer(playerKilledRequest);
-            JSONObject response = receiveFromServer();
-            System.out.println(response.getString("description"));
-            if (response.getString("status").equals("ok")) {
-                isSuccess = true;
-            }
-            emptyClientsInfoVoteNum();
-        } while (!isSuccess);
+        // Count vote
+        System.out.println(commands.get("count_vote"));
+        JSONObject playerKilledRequest = requestVoteResultWerewolf();
+        sendToServer(playerKilledRequest);
+        JSONObject response = receiveFromServer();
+        System.out.println(response.getString("description"));
+        if (response.getString("status").equals("ok")) {
+            isSuccess = true;
+        }
+        emptyClientsInfoVoteNum();
+        return isSuccess;
     }
 
     private void handleClientVote(DatagramPacket packet) throws JSONException, IOException {
@@ -1280,7 +1289,7 @@ public class Client {
         return request;
     }
 
-    public void voteResultCivilian(String playerUsername) throws IOException, JSONException {
+    public boolean voteResultCivilian(String playerUsername) throws IOException, JSONException {
         if (isAlive) {
             try {
                 Thread.sleep(1000);
@@ -1292,41 +1301,41 @@ public class Client {
 
         int voteSequence = 0;
         boolean isSuccess = false;
-        do {
-            int selfIsCivilian = 0;
-            // Vote for itself
-            if (isAlive) {
-                System.out.println(commands.get("vote_civilian"));
-                //String playerUsername = scan.nextLine();
 
-                int clientIdVoted = getClientIdByUsername(playerUsername);
-                int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
-                clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
-                selfIsCivilian = 1;
-            } else {
-                System.out.println(commands.get("wait"));
-            }
+        int selfIsCivilian = 0;
+        // Vote for itself
+        if (isAlive) {
+            System.out.println(commands.get("vote_civilian"));
+            //String playerUsername = scan.nextLine();
 
-            // Waiting others to vote
-            int votedClientNum = 0;
-            while (votedClientNum < getAliveClientsNum()-selfIsCivilian) {
-                handleClientVote(receiveFromClient());
-                votedClientNum++;
-            }
+            int clientIdVoted = getClientIdByUsername(playerUsername);
+            int voteNum = clientsInfo.get(clientIdVoted).getVoteNum();
+            clientsInfo.get(clientIdVoted).setVoteNum(voteNum+1);
+            selfIsCivilian = 1;
+        } else {
+            System.out.println(commands.get("wait"));
+        }
 
-            // Count vote
-            System.out.println(commands.get("count_vote"));
-            JSONObject playerKilledRequest = requestVoteResultCivilian();
-            sendToServer(playerKilledRequest);
-            JSONObject response = receiveFromServer();
-            System.out.println(response.getString("description"));
-            if (response.getString("status").equals("ok")) {
-                isSuccess = true;
-            } else {
-                voteSequence++;
-            }
-            emptyClientsInfoVoteNum();
-        } while (!isSuccess && voteSequence<2);
+        // Waiting others to vote
+        int votedClientNum = 0;
+        while (votedClientNum < getAliveClientsNum()-selfIsCivilian) {
+            handleClientVote(receiveFromClient());
+            votedClientNum++;
+        }
+
+        // Count vote
+        System.out.println(commands.get("count_vote"));
+        JSONObject playerKilledRequest = requestVoteResultCivilian();
+        sendToServer(playerKilledRequest);
+        JSONObject response = receiveFromServer();
+        System.out.println(response.getString("description"));
+        if (response.getString("status").equals("ok")) {
+            isSuccess = true;
+        } else {
+            voteSequence++;
+        }
+        emptyClientsInfoVoteNum();
+        return isSuccess;
     }
 
     /**
