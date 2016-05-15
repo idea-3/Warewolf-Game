@@ -732,8 +732,8 @@ public class Client {
         JSONObject request = requestPrepareProposalToClient();
         ArrayList<Integer> acceptorClientId = getAcceptor();
         for (int i=0; i<acceptorClientId.size(); i++) {
-            int clientId = acceptorClientId.get(i);
-            unReliableSendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            int acceptorId = acceptorClientId.get(i);
+            unReliableSendToClient(request, clientsInfo.get(acceptorId).getAddress(), clientsInfo.get(acceptorId).getPort());
         }
 
         ArrayList<DatagramPacket> packets = new ArrayList<>();
@@ -768,7 +768,8 @@ public class Client {
                 for (int i = 0; i < acceptorClientId.size(); i++) {
                     boolean isFound = false;
                     int j = 0;
-                    ClientInfo clientInfo = clientsInfo.get(i);
+                    int acceptorId = acceptorClientId.get(i);
+                    ClientInfo clientInfo = clientsInfo.get(acceptorId);
                     while (j < packets.size() && !isFound) {
                         DatagramPacket packet = packets.get(j);
                         if (clientInfo.getAddress().equals(packet.getAddress()) && clientInfo.getPort() == packet.getPort()) {
@@ -865,8 +866,8 @@ public class Client {
         JSONObject request = requestAcceptProposal();
         ArrayList<Integer> acceptorClientId = getAcceptor();
         for (int i=0; i<acceptorClientId.size(); i++) {
-            int clientId = acceptorClientId.get(i);
-            sendToClient(request, clientsInfo.get(clientId).getAddress(), clientsInfo.get(clientId).getPort());
+            int acceptorId = acceptorClientId.get(i);
+            sendToClient(request, clientsInfo.get(acceptorId).getAddress(), clientsInfo.get(acceptorId).getPort());
         }
 
         ArrayList<DatagramPacket> packets = new ArrayList<>();
@@ -897,7 +898,8 @@ public class Client {
                 for (int i = 0; i < acceptorClientId.size(); i++) {
                     boolean isFound = false;
                     int j = 0;
-                    ClientInfo clientInfo = clientsInfo.get(i);
+                    int acceptorId = acceptorClientId.get(i);
+                    ClientInfo clientInfo = clientsInfo.get(acceptorId);
                     while (j < packets.size() && !isFound) {
                         DatagramPacket packet = packets.get(j);
                         if (clientInfo.getAddress().equals(packet.getAddress()) && clientInfo.getPort() == packet.getPort()) {

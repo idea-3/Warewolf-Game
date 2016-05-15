@@ -21,9 +21,9 @@ public class Server {
     private ArrayList<ClientController> clients;
     private boolean isDecideRoleDone;
     private boolean isGameRunning = false;
-    private boolean isLeaderJobDone;
     private boolean isVoteDone;
     private int isLeaderChosen;
+    private int isLeaderJobDone;
     private int leaderId = -1;
     private int nextClientId = 0;
     private ServerSocket serverSocket;
@@ -188,9 +188,9 @@ public class Server {
      * @return true jika isLeaderJobDone true
      * @throws InterruptedException
      */
-    private boolean checkLeaderJobDone() throws InterruptedException {
+    private int countLeaderJobDone() throws InterruptedException {
         Thread.sleep(1000);
-        boolean leaderJobDone = isLeaderJobDone;
+        int leaderJobDone = isLeaderJobDone;
         return leaderJobDone;
     }
 
@@ -556,12 +556,12 @@ public class Server {
             isVoteDone = false;
             do {
                 countVote++;
-                if (isAlive || clientId == leaderId) {
+                if (isAlive || (clientId == leaderId)) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
                 }
-                isLeaderJobDone = false;
+                isLeaderJobDone = 0;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
                     response = getResponse(voteResult);
@@ -569,9 +569,9 @@ public class Server {
                         isVoteDone = true;
                     }
                     sendToClient(response);
-                    isLeaderJobDone = true;
+                    isLeaderJobDone++;
                 } else {
-                    while (!checkLeaderJobDone()) {
+                    while (countLeaderJobDone() < 1) {
                         // Menunggu sampai tugas leader selesai
                     }
                 }
@@ -592,24 +592,19 @@ public class Server {
                     vote(phase);
                     handleListClientRequest();
                 }
-                isLeaderJobDone = false;
+                isLeaderJobDone = 0;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
                     response = getResponse(voteResult);
                     sendToClient(response);
-                    isLeaderJobDone = true;
-                    System.out.println("isVoteDone1: " + isVoteDone);
+                    isLeaderJobDone++;
                 } else {
-                    while (!isLeaderJobDone) {
-                        Thread.sleep(1000);
+                    while (countLeaderJobDone() < 1) {
+                        // Menunggu sampai tugas leader selesai
                     }
-                    System.out.println("isVoteDone2: " + isVoteDone);
                 }
-                System.out.println("isVoteDone3: " + isVoteDone);
                 Thread.sleep(1000);
-                System.out.println("isVoteDone4: " + isVoteDone);
             } while (!isVoteDone);
-            System.out.println("tes");
         }
 
         /**
