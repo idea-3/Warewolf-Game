@@ -21,7 +21,6 @@ public class Server {
     private ArrayList<ClientController> clients;
     private boolean isDecideRoleDone;
     private boolean isGameRunning = false;
-    private boolean isLeaderJobDone;
     private boolean isVoteDone;
     private int isLeaderChosen;
     private int leaderId = -1;
@@ -188,12 +187,22 @@ public class Server {
      * @return true jika isLeaderJobDone true
      * @throws InterruptedException
      */
-    private boolean checkLeaderJobDone() throws InterruptedException {
+    private boolean isLeaderJobDone() throws InterruptedException {
         Thread.sleep(1000);
-        boolean leaderJobDone = isLeaderJobDone;
+        boolean leaderJobDone = true;
+        int numClient = clients.size();
+
+        int i = 0;
+        while (leaderJobDone && i < numClient) {
+            if (!clients.get(i).isLeaderJobDone) {
+//                System.out.println("CLIENT " + clients.get(i).username + " " + clients.get(i).isLeaderJobDone);
+                leaderJobDone = false;
+            }
+            i++;
+        }
+
         return leaderJobDone;
     }
-
     /**
      * Memeriksa apakah username telah ada atau tidak
      * @return true jika username telah ada
@@ -271,6 +280,7 @@ public class Server {
      */
     private class ClientController extends Thread {
         private boolean isAlive = false;
+        private boolean isLeaderJobDone = false;
         private boolean isProposer = false;
         private boolean isReady = false;
         private boolean isWerewolf = false;
@@ -556,22 +566,25 @@ public class Server {
             isVoteDone = false;
             do {
                 countVote++;
+                isLeaderJobDone = false;
                 if (isAlive || (clientId == leaderId)) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
+                } else {
+                    Thread.sleep(1000);
                 }
-                isLeaderJobDone = false;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
                     response = getResponse(voteResult);
                     if (countVote == 2) {
                         isVoteDone = true;
                     }
-                    sendToClient(response);
                     isLeaderJobDone = true;
+                    sendToClient(response);
                 } else {
-                    while (!checkLeaderJobDone()) {
+                    isLeaderJobDone = true;
+                    while (!isLeaderJobDone()) {
                         // Menunggu sampai tugas leader selesai
                     }
                 }
@@ -586,20 +599,22 @@ public class Server {
 
             isVoteDone = false;
             do {
-                System.out.println("isAlive: " + isAlive() + "-role: " +role);
+                isLeaderJobDone = false;
                 if ((isAlive && role.equals("werewolf")) || clientId==leaderId) {
                     Thread.sleep(1000);
                     vote(phase);
                     handleListClientRequest();
+                } else {
+                    Thread.sleep(1000);
                 }
-                isLeaderJobDone = false;
                 if (clientId == leaderId) {
                     voteResult = receiveFromClient();
                     response = getResponse(voteResult);
-                    sendToClient(response);
                     isLeaderJobDone = true;
+                    sendToClient(response);
                 } else {
-                    while (!checkLeaderJobDone()) {
+                    isLeaderJobDone = true;
+                    while (!isLeaderJobDone()) {
                         // Menunggu sampai tugas leader selesai
                     }
                 }
