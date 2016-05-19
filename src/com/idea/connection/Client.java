@@ -248,13 +248,12 @@ public class Client {
                                 }
                             } while (voteSequence<2 && method.equals("vote_now"));
 
-                            // Get dummy request for 2nd vote
                             if (voteSequence == 2) {
                                 request = receiveFromServer();
                             }
                         } else {
                             System.out.println(commands.get("wait"));
-                            request = receiveFromServer(); // Get dummy request
+                            request = receiveFromServer();
                         }
                     }
                 } else {
@@ -294,7 +293,7 @@ public class Client {
                             } while (method.equals("vote_now"));
                         } else {
                             System.out.println(commands.get("civilian_wait"));
-                            request = receiveFromServer(); // Get dummy request
+                            request = receiveFromServer();
                         }
                     }
                 }
