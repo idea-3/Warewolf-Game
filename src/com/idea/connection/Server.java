@@ -390,11 +390,11 @@ public class Server {
                     handleDayVote();
 
                     if (!isGameOver()) {
-                        sendDummyChangePhase("night", nightNarration);
+                        sendChangePhase("night", nightNarration);
                         changePhase("night", nightNarration);
                         handleListClientRequest();
                         handleNightVote();
-                        sendDummyChangePhase("day", dayNarration);
+                        sendChangePhase("day", dayNarration);
                     }
                 } while (!isGameOver());
                 isGameRunning = false;
@@ -417,7 +417,7 @@ public class Server {
             }
         }
 
-        private void sendDummyChangePhase(String time, String narration) throws JSONException {
+        private void sendChangePhase(String time, String narration) throws JSONException {
             JSONObject request = new JSONObject();
 
             request.put("method", "change_phase");
